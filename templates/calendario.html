@@ -1,0 +1,1291 @@
+{% extends "base.html" %}
+/* ── Data: 27/03/2026 - 16:33 ── */
+{% block title %}Calendário - Controle de Tarefas{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ── Tema: Light ── */
+    :root {
+        --cal-primary:       #0d6efd;
+        --cal-primary-light: #e8f0fe;
+        --cal-today-bg:      #0d6efd;
+        --cal-today-color:   #fff;
+        --cal-selected-bg:   #0a58ca;
+        --cal-surface:       #ffffff;
+        --cal-surface-alt:   #f8f9fa;
+        --cal-border:        #dee2e6;
+        --cal-border-inner:  #f0f0f0;
+        --cal-muted:         #6c757d;
+        --cal-text:          #212529;
+        --cal-text-dim:      #adb5bd;
+        --cal-dot-size:      5px;
+        --cal-radius:        12px;
+        --cal-shadow:        0 2px 12px rgba(0,0,0,0.08);
+        --cal-toggle-bg:     #e9ecef;
+        --cal-toggle-icon:   #495057;
+        --cal-drop-bg:       #c8dafe;
+        --cal-drop-border:   #0d6efd;
+    }
+
+    /* ── Tema: Dark ── */
+    [data-cal-theme="dark"] {
+        --cal-primary:       #4d8ef0;
+        --cal-primary-light: #1a2a45;
+        --cal-today-bg:      #4d8ef0;
+        --cal-today-color:   #fff;
+        --cal-selected-bg:   #2563c7;
+        --cal-surface:       #1e1e2e;
+        --cal-surface-alt:   #16161f;
+        --cal-border:        #2e2e40;
+        --cal-border-inner:  #252535;
+        --cal-muted:         #7c7c9a;
+        --cal-text:          #e2e2f0;
+        --cal-text-dim:      #3a3a52;
+        --cal-shadow:        0 2px 16px rgba(0,0,0,0.35);
+        --cal-toggle-bg:     #2e2e40;
+        --cal-toggle-icon:   #a0a0c0;
+        --cal-drop-bg:       #1a2a45;
+        --cal-drop-border:   #4d8ef0;
+    }
+
+    /* ── Fundo da página no dark ── */
+    [data-cal-theme="dark"] body,
+    [data-cal-theme="dark"] .content {
+        background-color: #13131c !important;
+    }
+
+    /* ── Botão toggle tema ── */
+    .cal-theme-toggle {
+        background: var(--cal-toggle-bg);
+        border: 1px solid var(--cal-border);
+        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        color: var(--cal-toggle-icon);
+        font-size: 1rem;
+        margin-left: 8px;
+    }
+    .cal-theme-toggle:hover {
+        border-color: var(--cal-primary);
+        color: var(--cal-primary);
+    }
+
+    /* ── Layout principal ── */
+    .cal-wrapper {
+        width: 100%;
+    }
+
+    /* ── Cabeçalho ── */
+    .cal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 0 16px 0;
+    }
+
+    .cal-header-left {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .cal-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--cal-text);
+        text-transform: capitalize;
+        letter-spacing: 0.01em;
+        min-width: 180px;
+        text-align: center;
+    }
+
+    .cal-nav-btn {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        color: var(--cal-text);
+        font-size: 1rem;
+    }
+
+    .cal-nav-btn:hover {
+        background: var(--cal-primary-light);
+        border-color: var(--cal-primary);
+        color: var(--cal-primary);
+    }
+
+    /* ── Grade mensal (desktop) ── */
+    .cal-grid-wrapper {
+        background: var(--cal-surface);
+        border-radius: var(--cal-radius);
+        box-shadow: var(--cal-shadow);
+        border: 1px solid var(--cal-border);
+        overflow: hidden;
+    }
+
+    .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        background: var(--cal-surface-alt);
+        border-bottom: 1px solid var(--cal-border);
+    }
+
+    .cal-weekday {
+        text-align: center;
+        padding: 10px 4px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--cal-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .cal-days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+    }
+
+    .cal-day {
+        min-height: 64px;
+        padding: 6px 4px;
+        border-right: 1px solid var(--cal-border-inner);
+        border-bottom: 1px solid var(--cal-border-inner);
+        cursor: pointer;
+        transition: background 0.12s;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .cal-day:nth-child(7n) { border-right: none; }
+    .cal-day:hover { background: var(--cal-primary-light); }
+
+    .cal-day.other-month { background: var(--cal-surface-alt); }
+    .cal-day.other-month .cal-day-num { color: var(--cal-text-dim); }
+
+    .cal-day-num {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--cal-text);
+        flex-shrink: 0;
+    }
+
+    .cal-day.today .cal-day-num {
+        background: var(--cal-today-bg);
+        color: var(--cal-today-color);
+        font-weight: 700;
+    }
+
+    .cal-day.selected .cal-day-num {
+        background: var(--cal-selected-bg);
+        color: #fff;
+        font-weight: 700;
+    }
+
+    .cal-day.today.selected .cal-day-num {
+        background: var(--cal-selected-bg);
+    }
+
+    /* Drag & drop */
+    .cal-day.drag-over {
+        background: var(--cal-drop-bg) !important;
+        outline: 2px dashed var(--cal-drop-border);
+        outline-offset: -2px;
+    }
+
+    .cal-task-card.dragging {
+        opacity: 0.45;
+        transform: scale(0.98);
+    }
+
+    /* Pontos */
+    .cal-dots {
+        display: flex;
+        gap: 2px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 3px;
+        max-width: 40px;
+    }
+
+    .cal-dot {
+        width: var(--cal-dot-size);
+        height: var(--cal-dot-size);
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    /* ── Faixa semanal (mobile) ── */
+    .cal-week-strip {
+        display: none;
+        background: var(--cal-surface);
+        border-radius: var(--cal-radius);
+        box-shadow: var(--cal-shadow);
+        border: 1px solid var(--cal-border);
+        padding: 12px 8px;
+    }
+
+    .cal-week-strip .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        background: transparent;
+        border: none;
+        margin-bottom: 6px;
+    }
+
+    .cal-week-strip .cal-weekday { padding: 4px 2px; }
+
+    .cal-week-strip .cal-days {
+        grid-template-columns: repeat(7, 1fr);
+    }
+
+    .cal-week-strip .cal-day {
+        min-height: 44px;
+        border: none;
+        border-radius: 8px;
+        padding: 4px 2px;
+    }
+
+    .cal-week-strip .cal-day:hover { background: var(--cal-primary-light); }
+
+    /* ── Lista ── */
+    .cal-list-section { margin-top: 20px; }
+
+    .cal-list-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--cal-text);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .cal-list-date-badge {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--cal-muted);
+        background: var(--cal-surface-alt);
+        border: 1px solid var(--cal-border);
+        border-radius: 20px;
+        padding: 2px 10px;
+    }
+
+    .cal-empty {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--cal-muted);
+        background: var(--cal-surface);
+        border-radius: var(--cal-radius);
+        border: 1px dashed var(--cal-border);
+    }
+
+    .cal-empty i { font-size: 2.5rem; opacity: 0.4; }
+
+    /* ── Card de tarefa ── */
+    .cal-task-card {
+        display: flex;
+        align-items: stretch;
+        background: var(--cal-surface);
+        border-radius: var(--cal-radius);
+        box-shadow: var(--cal-shadow);
+        border: 1px solid var(--cal-border);
+        margin-bottom: 10px;
+        overflow: hidden;
+        transition: transform 0.12s, box-shadow 0.12s;
+    }
+
+    .cal-task-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    }
+
+    .cal-task-bar { width: 5px; flex-shrink: 0; }
+
+    .cal-task-body {
+        flex: 1;
+        padding: 12px 14px;
+        min-width: 0;
+    }
+
+    .cal-task-name {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--cal-text);
+        margin-bottom: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .cal-task-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .cal-task-time {
+        font-size: 0.82rem;
+        color: var(--cal-muted);
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
+
+    .cal-task-badge {
+        font-size: 0.75rem;
+        padding: 2px 9px;
+        border-radius: 20px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }
+
+    /* ── Botões de ação do card ── */
+    .cal-task-actions {
+        display: flex;
+        gap: 4px;
+        padding: 8px 10px 8px 4px;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .cal-task-btn {
+        background: transparent;
+        border: 1px solid var(--cal-border);
+        border-radius: 7px;
+        color: var(--cal-muted);
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 0.78rem;
+        transition: all 0.15s;
+        text-decoration: none;
+    }
+
+    .cal-task-btn:hover          { border-color: var(--cal-primary); color: var(--cal-primary); }
+    .cal-task-btn.btn-success:hover { border-color: #22c55e; color: #22c55e; }
+    .cal-task-btn.btn-danger:hover  { border-color: #ef4444; color: #ef4444; }
+    .cal-task-btn.btn-info:hover    { border-color: #38bdf8; color: #38bdf8; }
+
+    /* ── Responsivo ── */
+    @media (max-width: 768px) {
+        .cal-grid-wrapper { display: none; }
+        .cal-week-strip { display: block; }
+        .cal-title { font-size: 1.05rem; }
+        .cal-task-name { white-space: normal; }
+    }
+
+    @media (min-width: 769px) {
+        .cal-week-strip { display: none; }
+        .cal-grid-wrapper { display: block; }
+    }
+
+    /* Animação da lista */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .cal-task-card {
+        animation: fadeInUp 0.18s ease both;
+    }
+
+    .cal-task-card:nth-child(1) { animation-delay: 0.00s; }
+    .cal-task-card:nth-child(2) { animation-delay: 0.04s; }
+    .cal-task-card:nth-child(3) { animation-delay: 0.08s; }
+    .cal-task-card:nth-child(4) { animation-delay: 0.12s; }
+    .cal-task-card:nth-child(5) { animation-delay: 0.16s; }
+
+    /* ── KPIs ── */
+    .cal-kpis {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    @media (max-width: 768px) {
+        .cal-kpis { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Gráfico em linha separada, largura total */
+    .cal-kpi-chart-row {
+        margin-bottom: 20px;
+    }
+
+    .cal-kpi-card {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: var(--cal-radius);
+        padding: 14px 16px;
+        box-shadow: var(--cal-shadow);
+    }
+
+    /* Card do gráfico — linha completa, altura maior */
+    .cal-kpi-card-chart {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: var(--cal-radius);
+        padding: 14px 16px;
+        box-shadow: var(--cal-shadow);
+        height: 160px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .cal-chart-container {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .cal-kpi-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--cal-muted);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .cal-kpi-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--cal-text);
+        line-height: 1;
+        margin-bottom: 6px;
+    }
+
+    .cal-kpi-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--cal-border);
+        overflow: hidden;
+    }
+
+    .cal-kpi-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: #22c55e;
+        transition: width 0.6s ease;
+    }
+
+    .cal-kpi-sub {
+        font-size: 0.72rem;
+        color: var(--cal-muted);
+        margin-top: 4px;
+    }
+
+    /* ── Gráfico ── */
+    .cal-chart-card {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: var(--cal-radius);
+        padding: 16px;
+        box-shadow: var(--cal-shadow);
+        margin-bottom: 20px;
+    }
+
+    .cal-chart-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--cal-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* ── Filtros ── */
+    .cal-filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+        align-items: center;
+    }
+
+    .cal-filter-input {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: 8px;
+        color: var(--cal-text);
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        outline: none;
+        transition: border-color 0.15s;
+        min-width: 0;
+    }
+
+    .cal-filter-input:focus {
+        border-color: var(--cal-primary);
+    }
+
+    .cal-filter-input::placeholder {
+        color: var(--cal-muted);
+    }
+
+    .cal-filter-search {
+        flex: 1;
+        min-width: 140px;
+    }
+
+    .cal-filter-select {
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: 8px;
+        color: var(--cal-text);
+        font-size: 0.8rem;
+        padding: 6px 10px;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.15s;
+    }
+
+    .cal-filter-select:focus {
+        border-color: var(--cal-primary);
+    }
+
+    .cal-filter-select option {
+        background: var(--cal-surface);
+        color: var(--cal-text);
+    }
+
+    .cal-filter-clear {
+        background: transparent;
+        border: 1px solid var(--cal-border);
+        border-radius: 8px;
+        color: var(--cal-muted);
+        font-size: 0.75rem;
+        padding: 6px 10px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+    }
+
+    .cal-filter-clear:hover {
+        border-color: var(--cal-primary);
+        color: var(--cal-primary);
+    }
+
+    .cal-filter-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--cal-primary-light);
+        color: var(--cal-primary);
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 3px 8px;
+    }
+    /* ── Layout principal: calendário + lista lado a lado ── */
+    .cal-main-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 20px;
+        align-items: start;
+    }
+
+    .cal-col-list {
+        position: sticky;
+        top: 70px;
+    }
+
+    .cal-col-list .cal-list-section {
+        margin-top: 0;
+    }
+
+    /* No mobile empilha verticalmente */
+    @media (max-width: 900px) {
+        .cal-main-layout {
+            grid-template-columns: 1fr;
+        }
+        .cal-col-list {
+            position: static;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cal-wrapper">
+
+    <!-- ── KPIs (3 cards numéricos) ── -->
+    <div class="cal-kpis" id="calKpis">
+        <div class="cal-kpi-card">
+            <div class="cal-kpi-label"><i class="bi bi-check-circle-fill" style="color:#22c55e;"></i> Concluídas</div>
+            <div class="cal-kpi-value" id="kpiConcluidas">—</div>
+            <div class="cal-kpi-sub" id="kpiConcluidasSub"></div>
+        </div>
+        <div class="cal-kpi-card">
+            <div class="cal-kpi-label"><i class="bi bi-clock" style="color:#f59e0b;"></i> Pendentes</div>
+            <div class="cal-kpi-value" id="kpiPendentes">—</div>
+            <div class="cal-kpi-sub" id="kpiPendentesSub"></div>
+        </div>
+        <div class="cal-kpi-card">
+            <div class="cal-kpi-label"><i class="bi bi-graph-up" style="color:#38bdf8;"></i> Taxa de conclusão</div>
+            <div class="cal-kpi-value" id="kpiTaxa">—</div>
+            <div class="cal-kpi-bar"><div class="cal-kpi-bar-fill" id="kpiTaxaBar" style="width:0%"></div></div>
+        </div>
+    </div>
+
+    <!-- ── Gráfico largura total ── -->
+    <div class="cal-kpi-chart-row">
+        <div class="cal-kpi-card-chart">
+            <div class="cal-kpi-label"><i class="bi bi-bar-chart-fill" style="color:#7c6af7;"></i> Tarefas por dia da semana</div>
+            <div class="cal-chart-container">
+                <canvas id="chartDiaSemana"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── FILTROS ── -->
+    <div class="cal-filters">
+        <input class="cal-filter-input cal-filter-search" type="text" id="filtroTexto"
+               placeholder="🔍 Buscar tarefa ou comentário…">
+        <select class="cal-filter-select" id="filtroCategoria">
+            <option value="">Todas as categorias</option>
+        </select>
+        <select class="cal-filter-select" id="filtroStatus">
+            <option value="">Todos os status</option>
+            <option value="Pendente">Pendente</option>
+            <option value="Concluída">Concluída</option>
+        </select>
+        <button class="cal-filter-clear" id="btnLimparFiltros" style="display:none;">
+            <i class="bi bi-x-circle"></i> Limpar
+        </button>
+        <span class="cal-filter-badge" id="filtroBadge" style="display:none;"></span>
+    </div>
+
+    <!-- ── LAYOUT PRINCIPAL: calendário + lista lado a lado ── -->
+    <div class="cal-main-layout">
+
+        <!-- COLUNA ESQUERDA: cabeçalho + grade -->
+        <div class="cal-col-calendar">
+
+            <div class="cal-header">
+                <div class="cal-header-left">
+                    <button class="cal-nav-btn" id="btnPrev" title="Mês anterior">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <div class="cal-title" id="calTitle"></div>
+                    <button class="cal-nav-btn" id="btnNext" title="Próximo mês">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+                <button class="cal-theme-toggle" id="btnTheme" title="Alternar tema claro/escuro">
+                    <i class="bi bi-moon-stars" id="themeIcon"></i>
+                </button>
+            </div>
+
+            <div class="cal-grid-wrapper">
+                <div class="cal-weekdays">
+                    <div class="cal-weekday">Dom</div>
+                    <div class="cal-weekday">Seg</div>
+                    <div class="cal-weekday">Ter</div>
+                    <div class="cal-weekday">Qua</div>
+                    <div class="cal-weekday">Qui</div>
+                    <div class="cal-weekday">Sex</div>
+                    <div class="cal-weekday">Sáb</div>
+                </div>
+                <div class="cal-days" id="calDaysDesktop"></div>
+            </div>
+
+            <div class="cal-week-strip">
+                <div class="cal-weekdays">
+                    <div class="cal-weekday">D</div>
+                    <div class="cal-weekday">S</div>
+                    <div class="cal-weekday">T</div>
+                    <div class="cal-weekday">Q</div>
+                    <div class="cal-weekday">Q</div>
+                    <div class="cal-weekday">S</div>
+                    <div class="cal-weekday">S</div>
+                </div>
+                <div class="cal-days" id="calDaysMobile"></div>
+            </div>
+
+        </div><!-- fim cal-col-calendar -->
+
+        <!-- COLUNA DIREITA: lista de tarefas do dia -->
+        <div class="cal-col-list">
+            <div class="cal-list-section">
+                <div class="cal-list-title">
+                    <i class="bi bi-calendar-event"></i>
+                    <span id="listTitle">Tarefas do dia</span>
+                    <span class="cal-list-date-badge" id="listDateBadge"></span>
+                </div>
+                <div id="taskList"></div>
+            </div>
+        </div><!-- fim cal-col-list -->
+
+    </div><!-- fim cal-main-layout -->
+
+</div>
+
+<!-- Dados do backend injetados como JSON -->
+<script>
+    const TAREFAS = {{ tarefas_json | safe }};
+    const CATEGORIAS = {{ categorias_json | safe }};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── CORREÇÃO CSRF: token injetado via Jinja2 para uso nos forms gerados por JS ──
+const CSRF_TOKEN = '{{ csrf_token() }}';
+
+(function () {
+    // ── Utilitários ──────────────────────────────────────────────
+    const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const MESES_CURTOS = ['jan.','fev.','mar.','abr.','mai.','jun.',
+                          'jul.','ago.','set.','out.','nov.','dez.'];
+    const DIAS_SEMANA  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    function toISO(d) { return d.toISOString().slice(0, 10); }
+
+    function today() {
+        const n = new Date();
+        return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    }
+
+    // Mapa categoria → cor
+    const catCor = {};
+    CATEGORIAS.forEach(c => { catCor[c.nome] = c.cor; });
+
+    // Popular select de categorias
+    const selCat = document.getElementById('filtroCategoria');
+    CATEGORIAS.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.nome;
+        opt.textContent = c.nome;
+        selCat.appendChild(opt);
+    });
+
+    const COR_MAP = {
+        primary: '#0d6efd', success: '#198754', danger: '#dc3545',
+        warning: '#ffc107', info: '#0dcaf0', secondary: '#6c757d',
+        dark: '#212529', light: '#adb5bd'
+    };
+
+    function corHex(cat) {
+        const bs = catCor[cat] || 'info';
+        return COR_MAP[bs] || '#0dcaf0';
+    }
+
+    // ── Estado ───────────────────────────────────────────────────
+    const todayDate   = today();
+    let   curYear     = todayDate.getFullYear();
+    let   curMonth    = todayDate.getMonth();
+    let   selectedDay = toISO(todayDate);
+
+    // Filtros
+    let filtroTexto    = '';
+    let filtroCategoria = '';
+    let filtroStatus   = '';
+
+    // Drag & drop
+    let dragId     = null;
+    let dragOrigin = null;
+
+    // ── Filtragem ────────────────────────────────────────────────
+    function tarefasFiltradas() {
+        if (!filtroTexto && !filtroCategoria && !filtroStatus) return TAREFAS;
+        const termo = filtroTexto.toLowerCase();
+        return TAREFAS.filter(t => {
+            if (filtroCategoria && t.categoria !== filtroCategoria) return false;
+            if (filtroStatus    && t.status    !== filtroStatus)    return false;
+            if (termo) {
+                const emTarefa    = t.tarefa.toLowerCase().includes(termo);
+                const emComentario = (t.comentario || '').toLowerCase().includes(termo);
+                if (!emTarefa && !emComentario) return false;
+            }
+            return true;
+        });
+    }
+
+    // Recomputa tarefasPorDia com filtro aplicado
+    function buildTarefasPorDia(lista) {
+        const m = {};
+        lista.forEach(t => {
+            if (!m[t.data_meta]) m[t.data_meta] = [];
+            m[t.data_meta].push(t);
+        });
+        return m;
+    }
+
+    // ── KPIs ─────────────────────────────────────────────────────
+    let chartInstance = null;
+
+    function renderKpis() {
+        const prefixo = `${curYear}-${String(curMonth + 1).padStart(2,'0')}`;
+        const doMes   = TAREFAS.filter(t => t.data_meta.startsWith(prefixo));
+
+        const concluidas = doMes.filter(t => t.status === 'Concluída').length;
+        const pendentes  = doMes.filter(t => t.status !== 'Concluída').length;
+        const total      = doMes.length;
+        const taxa       = total > 0 ? Math.round((concluidas / total) * 100) : 0;
+
+        document.getElementById('kpiConcluidas').textContent    = concluidas;
+        document.getElementById('kpiConcluidasSub').textContent = `de ${total} no mês`;
+        document.getElementById('kpiPendentes').textContent     = pendentes;
+        document.getElementById('kpiPendentesSub').textContent  = `tarefas abertas`;
+        document.getElementById('kpiTaxa').textContent          = `${taxa}%`;
+        document.getElementById('kpiTaxaBar').style.width       = `${taxa}%`;
+
+        // Gráfico: contagem por dia da semana (0=Dom … 6=Sáb)
+        const contagemDia = [0,0,0,0,0,0,0];
+        doMes.forEach(t => {
+            const dow = new Date(t.data_meta + 'T00:00:00').getDay();
+            contagemDia[dow]++;
+        });
+
+        const ctx = document.getElementById('chartDiaSemana').getContext('2d');
+        const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+        const gridColor  = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+        const textColor  = isDark ? '#8b90b8' : '#5a5f85';
+        const barColor   = isDark ? 'rgba(124,106,247,0.75)' : 'rgba(99,85,232,0.75)';
+        const barHover   = isDark ? '#9580ff' : '#7c6af7';
+
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: DIAS_SEMANA,
+                datasets: [{
+                    data: contagemDia,
+                    backgroundColor: barColor,
+                    hoverBackgroundColor: barHover,
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: false,
+                animation: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.parsed.y} tarefa${ctx.parsed.y !== 1 ? 's' : ''}`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: gridColor },
+                        ticks: { color: textColor, font: { size: 9 } }
+                    },
+                    y: {
+                        grid: { color: gridColor },
+                        ticks: { color: textColor, font: { size: 9 }, stepSize: 1 },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Ajustar canvas ao container após criação
+        const container = document.querySelector('.cal-chart-container');
+        if (container && chartInstance) {
+            const w = container.clientWidth  || 600;
+            const h = container.clientHeight || 110;
+            chartInstance.canvas.width  = w;
+            chartInstance.canvas.height = h;
+            chartInstance.resize(w, h);
+        }
+    }
+
+    // ── UI dos filtros ───────────────────────────────────────────
+    function atualizarUIFiltros() {
+        const temFiltro = filtroTexto || filtroCategoria || filtroStatus;
+        const btn   = document.getElementById('btnLimparFiltros');
+        const badge = document.getElementById('filtroBadge');
+        btn.style.display   = temFiltro ? 'inline-flex' : 'none';
+        badge.style.display = temFiltro ? 'inline-flex' : 'none';
+
+        if (temFiltro) {
+            const parts = [];
+            if (filtroCategoria) parts.push(filtroCategoria);
+            if (filtroStatus)    parts.push(filtroStatus);
+            if (filtroTexto)     parts.push(`"${filtroTexto}"`);
+            const count = tarefasFiltradas().length;
+            badge.textContent = `${count} tarefa${count !== 1 ? 's' : ''}`;
+        }
+    }
+
+    document.getElementById('filtroTexto').addEventListener('input', function() {
+        filtroTexto = this.value.trim();
+        atualizarUIFiltros();
+        renderCalendar();
+    });
+
+    document.getElementById('filtroCategoria').addEventListener('change', function() {
+        filtroCategoria = this.value;
+        atualizarUIFiltros();
+        renderCalendar();
+    });
+
+    document.getElementById('filtroStatus').addEventListener('change', function() {
+        filtroStatus = this.value;
+        atualizarUIFiltros();
+        renderCalendar();
+    });
+
+    document.getElementById('btnLimparFiltros').addEventListener('click', () => {
+        filtroTexto = ''; filtroCategoria = ''; filtroStatus = '';
+        document.getElementById('filtroTexto').value    = '';
+        document.getElementById('filtroCategoria').value = '';
+        document.getElementById('filtroStatus').value   = '';
+        atualizarUIFiltros();
+        renderCalendar();
+    });
+
+    // ── Renderização do calendário ───────────────────────────────
+    function renderCalendar() {
+        document.getElementById('calTitle').textContent =
+            MESES[curMonth] + ' ' + curYear;
+
+        const tarefasVisiveis  = tarefasFiltradas();
+        const tarefasPorDia    = buildTarefasPorDia(tarefasVisiveis);
+
+        renderDesktop(tarefasPorDia);
+        renderMobile(tarefasPorDia);
+        renderList(selectedDay, tarefasPorDia);
+        renderKpis();
+    }
+
+    function buildDayEl(dateISO, dayNum, isOtherMonth, tarefasPorDia) {
+        const div = document.createElement('div');
+        div.className = 'cal-day' +
+            (isOtherMonth ? ' other-month' : '') +
+            (dateISO === toISO(todayDate) ? ' today' : '') +
+            (dateISO === selectedDay ? ' selected' : '');
+        div.dataset.date = dateISO;
+
+        const num = document.createElement('div');
+        num.className = 'cal-day-num';
+        num.textContent = dayNum;
+        div.appendChild(num);
+
+        const tarefas = tarefasPorDia[dateISO] || [];
+        if (tarefas.length > 0) {
+            const dots = document.createElement('div');
+            dots.className = 'cal-dots';
+            tarefas.slice(0, 4).forEach(t => {
+                const dot = document.createElement('span');
+                dot.className = 'cal-dot';
+                dot.style.background = corHex(t.categoria);
+                dots.appendChild(dot);
+            });
+            div.appendChild(dots);
+        }
+
+        div.addEventListener('click', () => {
+            selectedDay = dateISO;
+            renderCalendar();
+        });
+
+        /* Drop target */
+        div.addEventListener('dragover', e => {
+            e.preventDefault();
+            div.classList.add('drag-over');
+        });
+        div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+        div.addEventListener('drop', e => {
+            e.preventDefault();
+            div.classList.remove('drag-over');
+            if (!dragId || dateISO === dragOrigin) return;
+            moverTarefa(dragId, dragOrigin, dateISO);
+        });
+
+        return div;
+    }
+
+    function renderDesktop(tarefasPorDia) {
+        const container = document.getElementById('calDaysDesktop');
+        container.innerHTML = '';
+
+        const firstDay   = new Date(curYear, curMonth, 1).getDay();
+        const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
+        const daysInPrev  = new Date(curYear, curMonth, 0).getDate();
+
+        for (let i = firstDay - 1; i >= 0; i--) {
+            const d = daysInPrev - i;
+            const m = curMonth === 0 ? 11 : curMonth - 1;
+            const y = curMonth === 0 ? curYear - 1 : curYear;
+            const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            container.appendChild(buildDayEl(iso, d, true, tarefasPorDia));
+        }
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const iso = `${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            container.appendChild(buildDayEl(iso, d, false, tarefasPorDia));
+        }
+
+        const total = firstDay + daysInMonth;
+        const remainder = total % 7 === 0 ? 0 : 7 - (total % 7);
+        for (let d = 1; d <= remainder; d++) {
+            const m = curMonth === 11 ? 0 : curMonth + 1;
+            const y = curMonth === 11 ? curYear + 1 : curYear;
+            const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            container.appendChild(buildDayEl(iso, d, true, tarefasPorDia));
+        }
+    }
+
+    function renderMobile(tarefasPorDia) {
+        const container = document.getElementById('calDaysMobile');
+        container.innerHTML = '';
+
+        const selDate  = new Date(selectedDay + 'T00:00:00');
+        const dow      = selDate.getDay();
+        const weekStart = new Date(selDate);
+        weekStart.setDate(selDate.getDate() - dow);
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart);
+            d.setDate(weekStart.getDate() + i);
+            const iso    = toISO(d);
+            const dayNum = d.getDate();
+            const isOther = d.getMonth() !== curMonth;
+            container.appendChild(buildDayEl(iso, dayNum, isOther, tarefasPorDia));
+        }
+    }
+
+    // ── Lista de tarefas do dia ──────────────────────────────────
+    function renderList(dateISO, tarefasPorDia) {
+        const list    = document.getElementById('taskList');
+        const titleEl = document.getElementById('listTitle');
+        const badgeEl = document.getElementById('listDateBadge');
+
+        const d = new Date(dateISO + 'T00:00:00');
+        const todayISO    = toISO(todayDate);
+        const tomorrowDate = new Date(todayDate);
+        tomorrowDate.setDate(todayDate.getDate() + 1);
+        const tomorrowISO = toISO(tomorrowDate);
+
+        let label = '';
+        if (dateISO === todayISO)         label = 'Hoje';
+        else if (dateISO === tomorrowISO) label = 'Amanhã';
+
+        badgeEl.textContent = `${d.getDate()} de ${MESES_CURTOS[d.getMonth()]}`;
+        titleEl.textContent = label ? `Tarefas — ${label}` : 'Tarefas do dia';
+
+        const tarefas = (tarefasPorDia[dateISO] || [])
+            .slice()
+            .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
+
+        if (tarefas.length === 0) {
+            list.innerHTML = `
+                <div class="cal-empty">
+                    <div><i class="bi bi-calendar-x"></i></div>
+                    <p class="mt-2 mb-0">Nenhuma tarefa neste dia</p>
+                </div>`;
+            return;
+        }
+
+        list.innerHTML = '';
+        tarefas.forEach(t => {
+            const card = document.createElement('div');
+            card.className = 'cal-task-card';
+            card.draggable = true;
+            card.dataset.id   = t.id;
+            card.dataset.data = dateISO;
+
+            card.addEventListener('dragstart', e => {
+                dragId     = t.id;
+                dragOrigin = dateISO;
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            card.addEventListener('dragend', () => card.classList.remove('dragging'));
+
+            const barColor = corHex(t.categoria);
+            const priClasses = {
+                'Muito Importante': 'bg-danger',
+                'Importante':       'bg-warning text-dark',
+                'Normal':           'bg-primary'
+            };
+            const priClass    = priClasses[t.prioridade] || 'bg-secondary';
+            const statusClass = t.status === 'Concluída' ? 'bg-success' : 'bg-warning text-dark';
+            const horaFim     = t.hora_fim ? ` — ${t.hora_fim}` : '';
+            const catBs       = catCor[t.categoria] || 'info';
+            const catTextClass = ['warning','info','light'].includes(catBs) ? 'text-dark' : '';
+
+            card.innerHTML = `
+                <div class="cal-task-bar" style="background:${barColor};"></div>
+                <div class="cal-task-body">
+                    <div class="cal-task-name">${escHtml(t.tarefa)}</div>
+                    <div class="cal-task-meta">
+                        <span class="cal-task-time">
+                            <i class="bi bi-clock"></i>
+                            ${escHtml(t.hora_inicio)}${escHtml(horaFim)}
+                        </span>
+                        <span class="badge ${priClass} cal-task-badge">${escHtml(t.prioridade)}</span>
+                        <span class="badge bg-${catBs} ${catTextClass} cal-task-badge">${escHtml(t.categoria)}</span>
+                        <span class="badge ${statusClass} cal-task-badge">${escHtml(t.status)}</span>
+                        ${t.comentario ? `<i class="bi bi-chat-left-text" style="color:var(--cal-muted);" title="${escHtml(t.comentario)}" data-bs-toggle="tooltip"></i>` : ''}
+                    </div>
+                </div>
+                <div class="cal-task-actions">
+                    ${t.status !== 'Concluída' ? `
+                    <form method="POST" action="/marcar_concluida/${t.id}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        <button type="submit" class="cal-task-btn btn-success" title="Marcar como concluída">
+                            <i class="bi bi-check-lg"></i>
+                        </button>
+                    </form>` : ''}
+                    <a href="/duplicar_tarefa/${t.id}" class="cal-task-btn btn-info" title="Duplicar">
+                        <i class="bi bi-files"></i>
+                    </a>
+                    <a href="/editar_tarefa/${t.id}" class="cal-task-btn" title="Editar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="POST" action="/deletar_tarefa/${t.id}" style="display:inline;"
+                          onsubmit="return confirm('Deletar \'${escHtml(t.tarefa).replace(/'/g,'\\\'')}\' ?');">
+                        <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        <button type="submit" class="cal-task-btn btn-danger" title="Deletar">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>`;
+
+            list.appendChild(card);
+        });
+
+        list.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+            new bootstrap.Tooltip(el);
+        });
+    }
+
+    function escHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Drag & drop: mover tarefa ────────────────────────────────
+    function moverTarefa(tarefaId, origem, destino) {
+        fetch(`/mover_tarefa/${tarefaId}`, {
+            method:  'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN
+            },
+            body:    JSON.stringify({ data_meta: destino })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                // Atualiza o array global TAREFAS (buildTarefasPorDia recalcula a partir dele)
+                const tarefa = TAREFAS.find(t => t.id === tarefaId);
+                if (tarefa) tarefa.data_meta = destino;
+                selectedDay = destino;
+                renderCalendar();
+                const p = destino.split('-');
+                showToast(`Tarefa movida para ${p[2]}/${p[1]}/${p[0]}`, true);
+            } else {
+                showToast(data.erro || 'Erro ao mover tarefa', false);
+            }
+        })
+        .catch(() => showToast('Erro de conexão', false));
+    }
+
+    function showToast(msg, ok) {
+        let el = document.getElementById('calToast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'calToast';
+            el.style.cssText = `
+                position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+                padding: 10px 20px; border-radius: 10px; font-size: 0.85rem;
+                font-weight: 600; z-index: 9999; pointer-events: none;
+                transition: opacity 0.3s;
+            `;
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.background = ok ? '#22c55e' : '#ef4444';
+        el.style.color = '#fff';
+        el.style.opacity = '1';
+        clearTimeout(el._timer);
+        el._timer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+    }
+
+    // ── Navegação ────────────────────────────────────────────────
+    document.getElementById('btnPrev').addEventListener('click', () => {
+        curMonth--;
+        if (curMonth < 0) { curMonth = 11; curYear--; }
+        renderCalendar();
+    });
+
+    document.getElementById('btnNext').addEventListener('click', () => {
+        curMonth++;
+        if (curMonth > 11) { curMonth = 0; curYear++; }
+        renderCalendar();
+    });
+
+    // ── Toggle dark/light ────────────────────────────────────────
+    const THEME_KEY = 'cal_theme';
+    const htmlEl    = document.documentElement;
+    const btnTheme  = document.getElementById('btnTheme');
+    const themeIcon = document.getElementById('themeIcon');
+
+    function applyTheme(theme) {
+        if (theme === 'dark') {
+            htmlEl.setAttribute('data-cal-theme', 'dark');
+            themeIcon.className = 'bi bi-sun';
+            btnTheme.title = 'Mudar para tema claro';
+        } else {
+            htmlEl.removeAttribute('data-cal-theme');
+            themeIcon.className = 'bi bi-moon-stars';
+            btnTheme.title = 'Mudar para tema escuro';
+        }
+        localStorage.setItem(THEME_KEY, theme);
+        // Recriar gráfico com cores do tema novo
+        renderKpis();
+    }
+
+    btnTheme.addEventListener('click', () => {
+        const current = htmlEl.getAttribute('data-cal-theme');
+        applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+
+    // ── Init ─────────────────────────────────────────────────────
+    renderCalendar();
+})();
+</script>
+{% endblock %}
