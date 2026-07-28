@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Etapas da Tarefa - Controle de Tarefas{% endblock %}
+
+{% block extra_css %}
+<style>
+    .steps-table { min-width: 860px; }
+    .step-title-cell { min-width: 240px; max-width: 420px; overflow-wrap: anywhere; }
+    .step-meta { color: var(--text-secondary); font-size: 0.8rem; }
+    .step-task-title {
+        color: var(--text-primary);
+        font-size: 1.25rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin: 0;
+    }
+    .step-task-context {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .progress { background: var(--bg-input); border: 1px solid var(--border-color); height: 10px; }
+    .progress-bar { background: var(--accent); }
+    .step-order-control {
+        align-items: center;
+        display: grid;
+        gap: 4px;
+        grid-template-columns: 32px 68px 32px 32px;
+        width: 168px;
+    }
+    .step-order-control .btn {
+        align-items: center;
+        display: inline-flex;
+        height: 30px;
+        justify-content: center;
+        padding: 0;
+        width: 30px;
+    }
+    .step-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .step-summary-item {
+        background: var(--bg-input);
+        border: 1px solid rgba(124, 92, 255, 0.55);
+        border-radius: 10px;
+        padding: 0.8rem 1rem;
+    }
+    .step-summary-item .step-meta {
+        color: var(--text-primary);
+        font-weight: 700;
+        opacity: 0.9;
+    }
+    .step-summary-value {
+        color: #ffffff;
+        font-size: 1.35rem;
+        font-weight: 800;
+    }
+    @media (max-width: 768px) {
+        .step-summary { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center gap-2">
+        <h4 class="mb-0"><i class="bi bi-diagram-3"></i> Etapas da tarefa: {{ tarefa.tarefa }}</h4>
+        <a href="{{ url_for('nova_etapa', id=tarefa.id) }}" class="btn btn-light btn-sm">
+            <i class="bi bi-plus-circle"></i> Nova Etapa
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                <div>
+                    <div class="step-task-context mb-1">Tarefa selecionada</div>
+                    <h5 class="step-task-title">{{ tarefa.tarefa }}</h5>
+                    <div class="step-meta">
+                        Prazo: {{ tarefa.data_meta.strftime('%d/%m/%Y') }} |
+                        Status da tarefa: {{ tarefa.status }}
+                    </div>
+                </div>
+                <a href="{{ url_for('lista_tarefas') }}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> Minhas Tarefas
+                </a>
+            </div>
+        </div>
+
+        <div class="step-summary mb-3">
+            <div class="step-summary-item">
+                <div class="step-meta">Total de etapas</div>
+                <div class="step-summary-value">{{ progresso.total }}</div>
+            </div>
+            <div class="step-summary-item">
+                <div class="step-meta">Concluidas</div>
+                <div class="step-summary-value">{{ progresso.concluidas }}</div>
+            </div>
+            <div class="step-summary-item">
+                <div class="step-meta">Progresso</div>
+                <div class="step-summary-value">{{ progresso.progresso }}%</div>
+                <div class="progress mt-2" role="progressbar" aria-valuenow="{{ progresso.progresso }}" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" style="width: {{ progresso.progresso }}%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover steps-table">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Ordem</th>
+                        <th>Etapa</th>
+                        <th>Data planejada</th>
+                        <th>Horario</th>
+                        <th>Status</th>
+                        <th>Acoes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if etapas %}
+                    {% for etapa in etapas %}
+                    <tr>
+                        <td>
+                            <form method="POST" action="{{ url_for('reordenar_etapas_tarefa', id=tarefa.id) }}" class="js-order-form step-order-control">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="button" class="btn btn-secondary btn-sm js-order-shift" data-direction="-1" title="Subir etapa" aria-label="Subir etapa">
+                                    <i class="bi bi-chevron-up"></i>
+                                </button>
+                                <input type="number" class="form-control form-control-sm js-order-input" value="{{ etapa.ordem }}" min="1" data-etapa-id="{{ etapa.id }}" aria-label="Ordem da etapa">
+                                <button type="button" class="btn btn-info btn-sm js-order-apply" title="Aplicar ordem da etapa" aria-label="Aplicar ordem da etapa">
+                                    <i class="bi bi-bullseye"></i>
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm js-order-shift" data-direction="1" title="Descer etapa" aria-label="Descer etapa">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                            </form>
+                        </td>
+                        <td class="step-title-cell">
+                            <strong>{{ etapa.titulo }}</strong>
+                            {% if etapa.descricao %}
+                            <i class="bi bi-chat-left-text text-muted ms-1" title="{{ etapa.descricao }}" data-bs-toggle="tooltip"></i>
+                            {% endif %}
+                        </td>
+                        <td>{{ etapa.data_planejada.strftime('%d/%m/%Y') if etapa.data_planejada else '-' }}</td>
+                        <td>
+                            {{ etapa.hora_inicio.strftime('%H:%M') if etapa.hora_inicio else '--:--' }}
+                            -
+                            {{ etapa.hora_fim.strftime('%H:%M') if etapa.hora_fim else '--:--' }}
+                        </td>
+                        <td>
+                            {% if etapa.status == 'Concluida' %}
+                            <span class="badge bg-success">Concluida</span>
+                            {% elif etapa.status == 'Iniciada' %}
+                            <span class="badge bg-primary">Iniciada</span>
+                            {% elif etapa.status == 'Pausada' %}
+                            <span class="badge bg-warning text-dark">Pausada</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Criada</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="row-actions" role="group" aria-label="Acoes da etapa">
+                                {% if 'Iniciada' in transicoes_status.get(etapa.status, []) %}
+                                <form method="POST" action="{{ url_for('iniciar_etapa', id=etapa.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-success btn-sm" title="{{ 'Retomar' if etapa.status == 'Pausada' else 'Iniciar' }}">
+                                        <i class="bi bi-play-fill"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if 'Pausada' in transicoes_status.get(etapa.status, []) %}
+                                <form method="POST" action="{{ url_for('pausar_etapa', id=etapa.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-secondary btn-sm" title="Pausar">
+                                        <i class="bi bi-pause-fill"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if 'Concluida' in transicoes_status.get(etapa.status, []) %}
+                                <form method="POST" action="{{ url_for('concluir_etapa', id=etapa.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-primary btn-sm" title="Concluir">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                <a href="{{ url_for('historico_etapa', id=etapa.id) }}" class="btn btn-info btn-sm" title="Historico">
+                                    <i class="bi bi-clock-history"></i>
+                                </a>
+                                <a href="{{ url_for('editar_etapa', id=etapa.id) }}" class="btn btn-primary btn-sm" title="Editar">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('deletar_etapa', id=etapa.id) }}" onsubmit="return confirm('Tem certeza que deseja deletar esta etapa?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-danger btn-sm" title="Deletar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="bi bi-diagram-3" style="font-size: 2rem;"></i>
+                            <p class="mb-2">Nenhuma etapa cadastrada</p>
+                            <a href="{{ url_for('nova_etapa', id=tarefa.id) }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-plus-circle"></i> Criar primeira etapa
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+});
+
+(function () {
+    var inputs = [].slice.call(document.querySelectorAll('.js-order-input'));
+    if (!inputs.length) return;
+
+    function submitOrder() {
+        var etapas = inputs.map(function (item) {
+            return { id: parseInt(item.dataset.etapaId, 10), ordem: parseInt(item.value, 10) };
+        });
+        fetch('{{ url_for("reordenar_etapas_tarefa", id=tarefa.id) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({ etapas: etapas })
+        }).then(function () {
+            window.location.reload();
+        }).catch(function () {
+            window.location.reload();
+        });
+    }
+
+    function shiftOrder(input, direction) {
+        var currentIndex = inputs.indexOf(input);
+        var targetIndex = currentIndex + direction;
+        if (targetIndex < 0 || targetIndex >= inputs.length) return;
+
+        var currentValue = input.value;
+        input.value = inputs[targetIndex].value;
+        inputs[targetIndex].value = currentValue;
+        submitOrder();
+    }
+
+    inputs.forEach(function (input) {
+        input.addEventListener('change', submitOrder);
+    });
+
+    document.querySelectorAll('.js-order-apply').forEach(function (button) {
+        button.addEventListener('click', submitOrder);
+    });
+
+    document.querySelectorAll('.js-order-shift').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var form = button.closest('.js-order-form');
+            var input = form ? form.querySelector('.js-order-input') : null;
+            if (!input) return;
+            shiftOrder(input, parseInt(button.dataset.direction, 10));
+        });
+    });
+
+    inputs.forEach(function (input, index) {
+        var form = input.closest('.js-order-form');
+        if (!form) return;
+        var upButton = form.querySelector('.js-order-shift[data-direction="-1"]');
+        var downButton = form.querySelector('.js-order-shift[data-direction="1"]');
+        if (upButton && index === 0) upButton.disabled = true;
+        if (downButton && index === inputs.length - 1) downButton.disabled = true;
+    });
+})();
+</script>
+{% endblock %}

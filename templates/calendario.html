@@ -233,6 +233,11 @@
         flex-shrink: 0;
     }
 
+    .cal-dot-step {
+        border: 1px solid var(--cal-surface);
+        box-shadow: 0 0 0 1px var(--cal-primary);
+    }
+
     /* ── Faixa semanal (mobile) ── */
     .cal-week-strip {
         display: none;
@@ -318,6 +323,10 @@
         box-shadow: 0 4px 16px rgba(0,0,0,0.18);
     }
 
+    .cal-task-card.cal-step-card {
+        border-style: dashed;
+    }
+
     .cal-task-bar { width: 5px; flex-shrink: 0; }
 
     .cal-task-body {
@@ -334,6 +343,16 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .cal-task-parent {
+        color: var(--cal-muted);
+        font-size: 0.78rem;
+        margin-top: -2px;
+        margin-bottom: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .cal-task-meta {
@@ -389,12 +408,139 @@
     .cal-task-btn.btn-danger:hover  { border-color: #ef4444; color: #ef4444; }
     .cal-task-btn.btn-info:hover    { border-color: #38bdf8; color: #38bdf8; }
 
+    .cal-deadline-section {
+        margin-top: 20px;
+        background: var(--cal-surface);
+        border: 1px solid var(--cal-border);
+        border-radius: var(--cal-radius);
+        box-shadow: var(--cal-shadow);
+        padding: 14px;
+    }
+
+    .cal-deadline-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .cal-deadline-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--cal-text);
+        font-size: 0.95rem;
+        font-weight: 700;
+    }
+
+    .cal-deadline-count {
+        color: var(--cal-muted);
+        font-size: 0.76rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .cal-deadline-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 8px;
+        max-height: 360px;
+        overflow-y: auto;
+        padding-right: 2px;
+    }
+
+    .cal-deadline-grid .cal-empty { grid-column: 1 / -1; }
+
+    .cal-deadline-card {
+        display: grid;
+        grid-template-columns: 4px minmax(0, 1fr);
+        background: var(--cal-surface-alt);
+        border: 1px solid var(--cal-border);
+        border-radius: 9px;
+        min-height: 68px;
+        overflow: hidden;
+    }
+
+    .cal-deadline-card:hover { border-color: var(--cal-primary); }
+
+    .cal-deadline-strip { width: 4px; }
+
+    .cal-deadline-body {
+        min-width: 0;
+        padding: 8px 9px;
+    }
+
+    .cal-deadline-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 4px;
+    }
+
+    .cal-deadline-days {
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        padding: 2px 7px;
+        white-space: nowrap;
+    }
+
+    .cal-deadline-type {
+        color: var(--cal-muted);
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .cal-deadline-name {
+        color: var(--cal-text);
+        font-size: 0.82rem;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .cal-deadline-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--cal-muted);
+        font-size: 0.72rem;
+        margin-top: 4px;
+        min-width: 0;
+    }
+
+    .cal-deadline-date,
+    .cal-deadline-status {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .cal-deadline-late  { background: rgba(239,68,68,0.13);  color: #ef4444; }
+    .cal-deadline-today { background: rgba(245,158,11,0.16); color: #f59e0b; }
+    .cal-deadline-soon  { background: rgba(56,189,248,0.14); color: #38bdf8; }
+    .cal-deadline-next  { background: var(--cal-primary-light); color: var(--cal-primary); }
+
     /* ── Responsivo ── */
     @media (max-width: 768px) {
         .cal-grid-wrapper { display: none; }
         .cal-week-strip { display: block; }
         .cal-title { font-size: 1.05rem; }
         .cal-task-name { white-space: normal; }
+        .cal-deadline-grid {
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            max-height: 420px;
+        }
+        .cal-deadline-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
     }
 
     @media (min-width: 769px) {
@@ -679,6 +825,15 @@
             <option value="">Todos os status</option>
             <option value="Pendente">Pendente</option>
             <option value="Concluída">Concluída</option>
+            <option value="Criada">Criada</option>
+            <option value="Iniciada">Iniciada</option>
+            <option value="Pausada">Pausada</option>
+            <option value="Concluida">Concluida</option>
+        </select>
+        <select class="cal-filter-select" id="filtroTipo">
+            <option value="">Tarefas e etapas</option>
+            <option value="tarefa">Somente tarefas</option>
+            <option value="etapa">Somente etapas</option>
         </select>
         <button class="cal-filter-clear" id="btnLimparFiltros" style="display:none;">
             <i class="bi bi-x-circle"></i> Limpar
@@ -749,11 +904,24 @@
 
     </div><!-- fim cal-main-layout -->
 
+    <div class="cal-deadline-section">
+        <div class="cal-deadline-header">
+            <div class="cal-deadline-title">
+                <i class="bi bi-hourglass-split"></i>
+                <span>Prazos de tarefas e etapas</span>
+            </div>
+            <div class="cal-deadline-count" id="deadlineCount"></div>
+        </div>
+        <div class="cal-deadline-grid" id="deadlineGrid"></div>
+    </div>
+
 </div>
 
 <!-- Dados do backend injetados como JSON -->
 <script>
     const TAREFAS = {{ tarefas_json | safe }};
+    const ETAPAS = {{ etapas_json | safe }};
+    const ITENS_CALENDARIO = TAREFAS.concat(ETAPAS);
     const CATEGORIAS = {{ categorias_json | safe }};
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -813,6 +981,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     let filtroTexto    = '';
     let filtroCategoria = '';
     let filtroStatus   = '';
+    let filtroTipo     = '';
 
     // Drag & drop
     let dragId     = null;
@@ -820,15 +989,17 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     // ── Filtragem ────────────────────────────────────────────────
     function tarefasFiltradas() {
-        if (!filtroTexto && !filtroCategoria && !filtroStatus) return TAREFAS;
+        if (!filtroTexto && !filtroCategoria && !filtroStatus && !filtroTipo) return ITENS_CALENDARIO;
         const termo = filtroTexto.toLowerCase();
-        return TAREFAS.filter(t => {
+        return ITENS_CALENDARIO.filter(t => {
+            if (filtroTipo && t.tipo !== filtroTipo) return false;
             if (filtroCategoria && t.categoria !== filtroCategoria) return false;
             if (filtroStatus    && t.status    !== filtroStatus)    return false;
             if (termo) {
                 const emTarefa    = t.tarefa.toLowerCase().includes(termo);
                 const emComentario = (t.comentario || '').toLowerCase().includes(termo);
-                if (!emTarefa && !emComentario) return false;
+                const emPrincipal = (t.tarefa_principal || '').toLowerCase().includes(termo);
+                if (!emTarefa && !emComentario && !emPrincipal) return false;
             }
             return true;
         });
@@ -928,7 +1099,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     // ── UI dos filtros ───────────────────────────────────────────
     function atualizarUIFiltros() {
-        const temFiltro = filtroTexto || filtroCategoria || filtroStatus;
+        const temFiltro = filtroTexto || filtroCategoria || filtroStatus || filtroTipo;
         const btn   = document.getElementById('btnLimparFiltros');
         const badge = document.getElementById('filtroBadge');
         btn.style.display   = temFiltro ? 'inline-flex' : 'none';
@@ -938,9 +1109,10 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
             const parts = [];
             if (filtroCategoria) parts.push(filtroCategoria);
             if (filtroStatus)    parts.push(filtroStatus);
+            if (filtroTipo)      parts.push(filtroTipo === 'etapa' ? 'etapas' : 'tarefas');
             if (filtroTexto)     parts.push(`"${filtroTexto}"`);
             const count = tarefasFiltradas().length;
-            badge.textContent = `${count} tarefa${count !== 1 ? 's' : ''}`;
+            badge.textContent = `${count} item${count !== 1 ? 's' : ''}`;
         }
     }
 
@@ -962,11 +1134,18 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         renderCalendar();
     });
 
+    document.getElementById('filtroTipo').addEventListener('change', function() {
+        filtroTipo = this.value;
+        atualizarUIFiltros();
+        renderCalendar();
+    });
+
     document.getElementById('btnLimparFiltros').addEventListener('click', () => {
-        filtroTexto = ''; filtroCategoria = ''; filtroStatus = '';
+        filtroTexto = ''; filtroCategoria = ''; filtroStatus = ''; filtroTipo = '';
         document.getElementById('filtroTexto').value    = '';
         document.getElementById('filtroCategoria').value = '';
         document.getElementById('filtroStatus').value   = '';
+        document.getElementById('filtroTipo').value     = '';
         atualizarUIFiltros();
         renderCalendar();
     });
@@ -982,6 +1161,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         renderDesktop(tarefasPorDia);
         renderMobile(tarefasPorDia);
         renderList(selectedDay, tarefasPorDia);
+        renderDeadlines(tarefasVisiveis);
         renderKpis();
     }
 
@@ -1004,8 +1184,9 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
             dots.className = 'cal-dots';
             tarefas.slice(0, 4).forEach(t => {
                 const dot = document.createElement('span');
-                dot.className = 'cal-dot';
+                dot.className = 'cal-dot' + (t.tipo === 'etapa' ? ' cal-dot-step' : '');
                 dot.style.background = corHex(t.categoria);
+                dot.title = t.tipo === 'etapa' ? 'Etapa' : 'Tarefa';
                 dots.appendChild(dot);
             });
             div.appendChild(dots);
@@ -1025,7 +1206,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         div.addEventListener('drop', e => {
             e.preventDefault();
             div.classList.remove('drag-over');
-            if (!dragId || dateISO === dragOrigin) return;
+            if (!dragId || String(dragId).startsWith('etapa-') || dateISO === dragOrigin) return;
             moverTarefa(dragId, dragOrigin, dateISO);
         });
 
@@ -1083,6 +1264,83 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     }
 
     // ── Lista de tarefas do dia ──────────────────────────────────
+    function renderDeadlines(lista) {
+        const grid = document.getElementById('deadlineGrid');
+        const countEl = document.getElementById('deadlineCount');
+        const hoje = todayDate.getTime();
+        const diaMs = 24 * 60 * 60 * 1000;
+        const isConcluido = status => String(status || '').toLowerCase().startsWith('conclu');
+
+        const abertos = lista
+            .filter(t => !isConcluido(t.status))
+            .map(t => {
+                const data = new Date(t.data_meta + 'T00:00:00');
+                return {
+                    item: t,
+                    data: data,
+                    dias: Math.round((data.getTime() - hoje) / diaMs)
+                };
+            })
+            .sort((a, b) => {
+                if (a.dias !== b.dias) return a.dias - b.dias;
+                if (a.item.tipo !== b.item.tipo) return a.item.tipo === 'tarefa' ? -1 : 1;
+                return a.item.tarefa.localeCompare(b.item.tarefa);
+            });
+
+        countEl.textContent = abertos.length
+            ? `${abertos.length} prazo${abertos.length !== 1 ? 's' : ''} em aberto`
+            : 'Nenhum prazo em aberto';
+
+        if (abertos.length === 0) {
+            grid.innerHTML = `
+                <div class="cal-empty">
+                    <div><i class="bi bi-check2-circle"></i></div>
+                    <p class="mt-2 mb-0">Nenhuma tarefa ou etapa aberta</p>
+                </div>`;
+            return;
+        }
+
+        grid.innerHTML = '';
+        abertos.forEach(({ item, data, dias }) => {
+            const card = document.createElement('a');
+            const isEtapa = item.tipo === 'etapa';
+            const prazoClass = dias < 0
+                ? 'cal-deadline-late'
+                : dias === 0
+                    ? 'cal-deadline-today'
+                    : dias <= 7
+                        ? 'cal-deadline-soon'
+                        : 'cal-deadline-next';
+            const prazoTexto = dias < 0
+                ? `Atrasada ha ${Math.abs(dias)} dia${Math.abs(dias) !== 1 ? 's' : ''}`
+                : dias === 0
+                    ? 'Hoje'
+                    : `Faltam ${dias} dia${dias !== 1 ? 's' : ''}`;
+            const dataTexto = `${String(data.getDate()).padStart(2,'0')}/${String(data.getMonth() + 1).padStart(2,'0')}/${data.getFullYear()}`;
+
+            card.href = isEtapa ? `/etapas/${item.id}/editar` : `/editar_tarefa/${item.id}`;
+            card.className = 'cal-deadline-card';
+            card.title = isEtapa
+                ? `${item.tarefa} - ${item.tarefa_principal || ''}`
+                : item.tarefa;
+            card.style.textDecoration = 'none';
+            card.innerHTML = `
+                <div class="cal-deadline-strip" style="background:${corHex(item.categoria)};"></div>
+                <div class="cal-deadline-body">
+                    <div class="cal-deadline-top">
+                        <span class="cal-deadline-days ${prazoClass}">${escHtml(prazoTexto)}</span>
+                        <span class="cal-deadline-type">${isEtapa ? 'Etapa' : 'Tarefa'}</span>
+                    </div>
+                    <div class="cal-deadline-name">${escHtml(item.tarefa)}</div>
+                    <div class="cal-deadline-meta">
+                        <span class="cal-deadline-date"><i class="bi bi-calendar3"></i> ${dataTexto}</span>
+                        <span class="cal-deadline-status">${escHtml(item.status)}</span>
+                    </div>
+                </div>`;
+            grid.appendChild(card);
+        });
+    }
+
     function renderList(dateISO, tarefasPorDia) {
         const list    = document.getElementById('taskList');
         const titleEl = document.getElementById('listTitle');
@@ -1099,17 +1357,23 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         else if (dateISO === tomorrowISO) label = 'Amanhã';
 
         badgeEl.textContent = `${d.getDate()} de ${MESES_CURTOS[d.getMonth()]}`;
-        titleEl.textContent = label ? `Tarefas — ${label}` : 'Tarefas do dia';
+        titleEl.textContent = label ? `Itens — ${label}` : 'Itens do dia';
 
         const tarefas = (tarefasPorDia[dateISO] || [])
             .slice()
-            .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
+            .sort((a, b) => {
+                const horaA = a.hora_inicio || '99:99';
+                const horaB = b.hora_inicio || '99:99';
+                if (horaA !== horaB) return horaA.localeCompare(horaB);
+                if (a.tipo !== b.tipo) return a.tipo === 'tarefa' ? -1 : 1;
+                return a.tarefa.localeCompare(b.tarefa);
+            });
 
         if (tarefas.length === 0) {
             list.innerHTML = `
                 <div class="cal-empty">
                     <div><i class="bi bi-calendar-x"></i></div>
-                    <p class="mt-2 mb-0">Nenhuma tarefa neste dia</p>
+                    <p class="mt-2 mb-0">Nenhum item neste dia</p>
                 </div>`;
             return;
         }
@@ -1117,12 +1381,17 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         list.innerHTML = '';
         tarefas.forEach(t => {
             const card = document.createElement('div');
-            card.className = 'cal-task-card';
-            card.draggable = true;
-            card.dataset.id   = t.id;
+            const isEtapa = t.tipo === 'etapa';
+            card.className = 'cal-task-card' + (isEtapa ? ' cal-step-card' : '');
+            card.draggable = !isEtapa;
+            card.dataset.id   = isEtapa ? `etapa-${t.id}` : t.id;
             card.dataset.data = dateISO;
 
             card.addEventListener('dragstart', e => {
+                if (isEtapa) {
+                    e.preventDefault();
+                    return;
+                }
                 dragId     = t.id;
                 dragOrigin = dateISO;
                 card.classList.add('dragging');
@@ -1137,27 +1406,34 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                 'Normal':           'bg-primary'
             };
             const priClass    = priClasses[t.prioridade] || 'bg-secondary';
-            const statusClass = t.status === 'Concluída' ? 'bg-success' : 'bg-warning text-dark';
+            const statusClasses = {
+                'Concluída': 'bg-success',
+                'Concluida': 'bg-success',
+                'Iniciada': 'bg-primary',
+                'Pausada': 'bg-warning text-dark',
+                'Criada': 'bg-secondary',
+                'Pendente': 'bg-warning text-dark'
+            };
+            const statusClass = statusClasses[t.status] || 'bg-secondary';
             const horaFim     = t.hora_fim ? ` — ${t.hora_fim}` : '';
             const catBs       = catCor[t.categoria] || 'info';
             const catTextClass = ['warning','info','light'].includes(catBs) ? 'text-dark' : '';
-
-            card.innerHTML = `
-                <div class="cal-task-bar" style="background:${barColor};"></div>
-                <div class="cal-task-body">
-                    <div class="cal-task-name">${escHtml(t.tarefa)}</div>
-                    <div class="cal-task-meta">
-                        <span class="cal-task-time">
-                            <i class="bi bi-clock"></i>
-                            ${escHtml(t.hora_inicio)}${escHtml(horaFim)}
-                        </span>
-                        <span class="badge ${priClass} cal-task-badge">${escHtml(t.prioridade)}</span>
-                        <span class="badge bg-${catBs} ${catTextClass} cal-task-badge">${escHtml(t.categoria)}</span>
-                        <span class="badge ${statusClass} cal-task-badge">${escHtml(t.status)}</span>
-                        ${t.comentario ? `<i class="bi bi-chat-left-text" style="color:var(--cal-muted);" title="${escHtml(t.comentario)}" data-bs-toggle="tooltip"></i>` : ''}
-                    </div>
-                </div>
-                <div class="cal-task-actions">
+            const itemBadge = isEtapa
+                ? '<span class="badge bg-info text-dark cal-task-badge">Etapa</span>'
+                : '<span class="badge bg-secondary cal-task-badge">Tarefa</span>';
+            const parentHtml = isEtapa
+                ? `<div class="cal-task-parent"><i class="bi bi-list-task"></i> ${escHtml(t.tarefa_principal)}</div>`
+                : '';
+            const horaHtml = t.hora_inicio
+                ? `<span class="cal-task-time"><i class="bi bi-clock"></i>${escHtml(t.hora_inicio)}${escHtml(horaFim)}</span>`
+                : '<span class="cal-task-time"><i class="bi bi-clock"></i>Horario nao definido</span>';
+            const actionsHtml = isEtapa ? `
+                    <a href="/tarefas/${t.tarefa_id}/etapas" class="cal-task-btn btn-info" title="Abrir etapas">
+                        <i class="bi bi-diagram-3"></i>
+                    </a>
+                    <a href="/etapas/${t.id}/editar" class="cal-task-btn" title="Editar etapa">
+                        <i class="bi bi-pencil"></i>
+                    </a>` : `
                     ${t.status !== 'Concluída' ? `
                     <form method="POST" action="/marcar_concluida/${t.id}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
@@ -1177,7 +1453,23 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                         <button type="submit" class="cal-task-btn btn-danger" title="Deletar">
                             <i class="bi bi-trash"></i>
                         </button>
-                    </form>
+                    </form>`;
+
+            card.innerHTML = `
+                <div class="cal-task-bar" style="background:${barColor};"></div>
+                <div class="cal-task-body">
+                    <div class="cal-task-name">${escHtml(t.tarefa)}</div>
+                    ${parentHtml}
+                    <div class="cal-task-meta">
+                        ${horaHtml}
+                        ${isEtapa ? itemBadge : `<span class="badge ${priClass} cal-task-badge">${escHtml(t.prioridade)}</span>`}
+                        <span class="badge bg-${catBs} ${catTextClass} cal-task-badge">${escHtml(t.categoria)}</span>
+                        <span class="badge ${statusClass} cal-task-badge">${escHtml(t.status)}</span>
+                        ${t.comentario ? `<i class="bi bi-chat-left-text" style="color:var(--cal-muted);" title="${escHtml(t.comentario)}" data-bs-toggle="tooltip"></i>` : ''}
+                    </div>
+                </div>
+                <div class="cal-task-actions">
+                    ${actionsHtml}
                 </div>`;
 
             list.appendChild(card);

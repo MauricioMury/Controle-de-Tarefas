@@ -20,10 +20,15 @@
                 <form method="POST" action="{{ url_for('cadastro_tarefa') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {% if duplicate_id %}
+                    <input type="hidden" name="duplicate_id" value="{{ duplicate_id }}">
                     <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> Você está duplicando uma tarefa. Preencha a nova data e hora fim.
+                        <i class="bi bi-info-circle"></i> Você está duplicando uma tarefa. As etapas serão copiadas como criadas. Preencha a nova data e hora fim.
                     </div>
                     {% endif %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-diagram-3"></i> As etapas ficam disponíveis depois que a tarefa for salva.
+                        Após cadastrar, abra a tarefa em Minhas Tarefas e use o botão Etapas.
+                    </div>
 
                     <div class="mb-3">
                         <label for="tarefa" class="form-label">Tarefa *</label>

@@ -1,14 +1,14 @@
 # Mapa do Projeto - Controle de Tarefas
 
 **Versao:** 5.0
-**Data:** 19 - Julho 2026
+**Data:** 20 - Julho 2026
 **Tecnologias:** Flask 3.0, SQLite, Bootstrap 5, Python 3.11+, Syne + DM Sans (Google Fonts)
 
 ---
 
-## O que vai ter na V5?
+## O que a V5 entregou?
 
-A V5 adiciona a funcionalidade de **etapas de execucao da tarefa**.
+A V5 adicionou a funcionalidade de **etapas de execucao da tarefa**.
 
 Decisao conceitual importante: nao trataremos como "subtarefas". A tarefa principal representa o resultado esperado, enquanto as etapas representam as acoes necessarias para chegar nesse resultado.
 
@@ -27,7 +27,7 @@ Etapas:
 4. Validar funcionamento - Pendente
 ```
 
-Cada etapa tera:
+Cada etapa possui:
 
 - titulo;
 - descricao;
@@ -108,10 +108,10 @@ templates/
 ├── cadastro_categoria.html
 ├── editar_categoria.html
 ├── lista_categorias.html
-├── lista_etapas.html              # Planejado V5
-├── cadastro_etapa.html            # Planejado V5
-├── editar_etapa.html              # Planejado V5
-└── historico_etapa.html           # Planejado V5
+├── lista_etapas.html              # Implementado V5
+├── cadastro_etapa.html            # Implementado V5
+├── editar_etapa.html              # Implementado V5
+└── historico_etapa.html           # Implementado V5
 ```
 
 **Hierarquia de Templates:**
@@ -162,7 +162,7 @@ login.html (standalone - toggle proprio, nao estende base.html)
 #### Cadastro de Tarefa
 - **Rota:** `/cadastro_tarefa`
 - **Campos atuais:** tarefa, comentario, data meta, data realizado, hora inicio, hora fim, prioridade, recorrencia e categoria
-- **V5:** a tarefa podera receber etapas apos a criacao ou durante a edicao, conforme decisao de interface.
+- **V5:** a tarefa recebe etapas apos a criacao, pela tela propria de etapas.
 - **Validacao atual:** hora fim maior que hora inicio quando ambos existirem.
 
 #### Lista de Tarefas
@@ -175,29 +175,29 @@ login.html (standalone - toggle proprio, nao estende base.html)
   - indicador visual de filtros ativos;
   - ordenacao por data e hora;
   - tabela responsiva Bootstrap.
-- **V5 planejado:** exibir resumo de progresso da tarefa, quantidade de etapas concluidas e atalho para abrir as etapas.
+- **V5 implementado:** exibe resumo de progresso, quantidade de etapas concluidas e atalho para abrir as etapas.
 
 #### Edicao de Tarefa
 - **Rota:** `/editar_tarefa/<id>`
-- **V5 planejado:** exibir bloco de etapas vinculadas, sem transformar o formulario principal em uma tela pesada.
+- **V5 implementado:** mantem a edicao da tarefa leve e direciona a gestao de etapas para telas proprias.
 
 #### Exclusao de Tarefa
 - **Rota:** `/deletar_tarefa/<id>` (POST)
-- **V5 planejado:** excluir etapas e historicos vinculados por cascade controlado pelo ORM.
+- **V5 implementado:** a exclusao de tarefa remove etapas e historicos vinculados por cascade ORM; a exclusao fisica de uma etapa remove seus historicos nesta versao.
 
 #### Marcar como Concluida
 - **Rota:** `/marcar_concluida/<id>` (POST)
-- **V5 decisao pendente:** definir se a tarefa so podera ser concluida quando todas as etapas estiverem concluidas.
+- **V5 adiado:** a tarefa ainda pode ser marcada como concluida independentemente das etapas. Bloqueio por progresso fica fora desta versao.
 
 #### Duplicar Tarefa
 - **Rota:** `/duplicar_tarefa/<id>`
-- **V5 decisao pendente:** definir se a duplicacao copia tambem as etapas como `Criada` ou se copia apenas os campos da tarefa.
+- **V5 implementado:** a duplicacao copia os dados da tarefa e recria as etapas da origem como `Criada`, sem historico antigo, sem `concluida_em` e com `data_planejada` igual a `data_meta` da nova tarefa.
 
 ---
 
 ### 2.3 Gestao de Etapas
 
-#### Planejado V5
+#### Implementado na V5
 
 - Criar etapa vinculada a uma tarefa.
 - Editar titulo, descricao, ordem, data planejada, hora inicio, hora fim e status.
@@ -242,10 +242,11 @@ Prazo: 20/07/2026
 
 ### 2.5 Calendario
 
-#### Planejado V5
+#### Implementado na V5
 
-- A tarefa principal podera ocupar o periodo geral do trabalho.
-- As etapas aparecerao individualmente no calendario pela data planejada ou pelo periodo de execucao.
+- A tarefa principal aparece no calendario pela data meta.
+- As etapas aparecem individualmente no calendario pela data planejada.
+- O calendario diferencia tarefas e etapas por filtro de tipo e badge visual.
 
 Exemplo:
 
@@ -307,58 +308,103 @@ class Categoria(db.Model):
 
 ### 3.4 Modelo Etapa
 
-Nomes sugeridos em portugues sem acento:
+Modelo aprovado para a V5-2, com nomes em portugues sem acento e escopo explicito por `tenant_id` e `user_id`:
 
 ```python
 class Etapa(db.Model):
-    id             = db.Column(db.Integer, primary_key=True)
-    tarefa_id      = db.Column(db.Integer, db.ForeignKey("tarefa.id"), nullable=False)
-    titulo         = db.Column(db.String(200), nullable=False)
-    descricao      = db.Column(db.Text, nullable=True)
-    ordem          = db.Column(db.Integer, nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint("tarefa_id", "ordem", name="uq_etapa_tarefa_ordem"),
+        db.CheckConstraint(
+            "status IN ('Criada', 'Iniciada', 'Pausada', 'Concluida')",
+            name="ck_etapa_status",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tarefa_id = db.Column(db.Integer, db.ForeignKey("tarefa.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    titulo = db.Column(db.String(200), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    ordem = db.Column(db.Integer, nullable=False)
     data_planejada = db.Column(db.Date, nullable=True)
-    hora_inicio    = db.Column(db.Time, nullable=True)
-    hora_fim       = db.Column(db.Time, nullable=True)
-    status         = db.Column(db.String(20), nullable=False, default="Criada")
-    concluida_em   = db.Column(db.DateTime, nullable=True)
-    user_id        = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at     = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    hora_inicio = db.Column(db.Time, nullable=True)
+    hora_fim = db.Column(db.Time, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="Criada")
+    concluida_em = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 ```
+
+Decisoes da V5-2:
+
+- `tenant_id` e `user_id` ficam na etapa para manter o mesmo padrao de isolamento de `Tarefa` e `Categoria`.
+- `ordem` deve ser unica dentro da mesma tarefa.
+- `status` deve aceitar apenas `Criada`, `Iniciada`, `Pausada` e `Concluida`.
+- `data_planejada` representa a data prevista da etapa.
+- `hora_inicio` e `hora_fim` representam a janela de execucao da etapa.
+- `concluida_em` registra o momento real de conclusao.
+- Nao entram nesta versao: responsavel, peso, dependencia e obrigatoriedade.
+- O progresso da tarefa nao sera persistido em coluna nesta V5; sera calculado a partir das etapas.
 
 ### 3.5 Modelo HistoricoEtapa
 
 ```python
 class HistoricoEtapa(db.Model):
-    id          = db.Column(db.Integer, primary_key=True)
-    tarefa_id   = db.Column(db.Integer, db.ForeignKey("tarefa.id"), nullable=False)
-    etapa_id    = db.Column(db.Integer, db.ForeignKey("etapa.id"), nullable=False)
-    user_id     = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    acao        = db.Column(db.String(50), nullable=False)
-    descricao   = db.Column(db.Text, nullable=True)
-    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (
+        db.CheckConstraint(
+            "acao IN ('criar', 'editar', 'iniciar', 'pausar', 'retomar', 'concluir', 'excluir', 'reordenar')",
+            name="ck_historico_etapa_acao",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tarefa_id = db.Column(db.Integer, db.ForeignKey("tarefa.id"), nullable=False, index=True)
+    etapa_id = db.Column(db.Integer, db.ForeignKey("etapa.id"), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenant.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    acao = db.Column(db.String(50), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 ```
+
+Decisoes da V5-2:
+
+- O historico registra o usuario que executou a acao, mas tambem guarda `tenant_id` para auditoria e filtros seguros.
+- `acao` deve ser uma lista controlada, nao texto livre.
+- `descricao` pode receber detalhes de contexto, mas nao deve registrar segredos, tokens ou dados sensiveis.
+- Historico deve ser criado automaticamente nas mudancas relevantes de etapa.
+- Na exclusao de etapa, a V5 deve preferir registrar a acao antes de remover a etapa. Se a exclusao fisica apagar tambem o historico por cascade, isso perde auditabilidade; por isso, a decisao final de exclusao fisica versus exclusao logica fica marcada como ponto de atencao para V5-5.
 
 ### 3.6 Relacionamentos
 
 ```text
-User (1) -> (N) Tarefa
+Tenant (1) -> (N) User
+Tenant (1) -> (N) Categoria
+Tenant (1) -> (N) Tarefa
+Tenant (1) -> (N) Etapa
+Tenant (1) -> (N) HistoricoEtapa
+
 User (1) -> (N) Categoria
+User (1) -> (N) Tarefa
 User (1) -> (N) Etapa
 User (1) -> (N) HistoricoEtapa
 
-Tarefa (1) -> (N) Etapa
+Categoria (1) -> (N) Tarefa
+Tarefa (1) -> (N) Etapa, ordenadas por `ordem`
 Tarefa (1) -> (N) HistoricoEtapa
 Etapa (1) -> (N) HistoricoEtapa
-Categoria (1) -> (N) Tarefa
 ```
 
 Regras de integridade:
 
 - Toda etapa deve pertencer a uma tarefa do mesmo usuario.
 - Todo historico deve pertencer a uma etapa e tarefa do mesmo usuario.
+- Toda etapa e todo historico devem carregar o mesmo `tenant_id` e `user_id` da tarefa.
 - Ao excluir uma tarefa, as etapas e historicos vinculados devem ser tratados de forma explicita e validada.
 - `ordem` deve ser unica por tarefa.
+- A busca por etapa nunca deve usar apenas `Etapa.id`; deve validar `tenant_id`, `user_id` e a tarefa vinculada.
+- A busca por historico nunca deve usar apenas `HistoricoEtapa.id`; deve validar `tenant_id`, `user_id`, tarefa e etapa vinculadas.
 
 ---
 
@@ -388,7 +434,7 @@ Regras de integridade:
 | `/editar_categoria/<id>` | GET, POST | Editar categoria |
 | `/deletar_categoria/<id>` | POST | Deletar categoria |
 
-### 4.3 Rotas Protegidas Planejadas para V5
+### 4.3 Rotas Protegidas Implementadas na V5
 
 | Rota | Metodo | Descricao |
 |------|--------|-----------|
@@ -413,17 +459,18 @@ Mantem o design system da V4, sem redesenhar a aplicacao inteira.
 
 ### 5.2 Listagem de Tarefas
 
-Adicionar informacoes compactas:
+Implementado:
 
 - barra ou texto de progresso;
 - quantidade de etapas concluidas;
 - botao/atalho para etapas;
-- filtro por status da tarefa continua existindo;
-- filtro por status de etapa pode ser adicionado somente se a query continuar simples e performatica.
+- filtro por status da tarefa continua existindo.
+
+Filtro por status de etapa na lista de tarefas ficou fora da V5 para manter a query simples. O calendario recebeu filtro por tipo e status visual de etapas.
 
 ### 5.3 Tela de Etapas
 
-A tela de etapas deve priorizar operacao rapida:
+A tela de etapas prioriza operacao rapida:
 
 - lista ordenada por `ordem`;
 - status visivel;
@@ -434,7 +481,7 @@ A tela de etapas deve priorizar operacao rapida:
 
 ### 5.4 Historico de Etapa
 
-Exibir linha do tempo simples:
+Exibe linha do tempo simples:
 
 ```text
 16/07 09:00 - Joao iniciou a preparacao.
@@ -458,12 +505,19 @@ Exibir linha do tempo simples:
 ### 6.2 Execucao Local
 
 ```powershell
-venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
+$env:APP_ENV="Desenvolvimento"
 python app.py
 ```
 
 Acesse: `http://127.0.0.1:5050`
+
+### 6.3 Validacao Local
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual
+```
 
 ---
 
@@ -473,11 +527,11 @@ Acesse: `http://127.0.0.1:5050`
 |-----------------|--------------------|
 | SQL Injection | SQLAlchemy ORM |
 | XSS | Jinja2 auto-escape |
-| CSRF | Manter validacao existente; avaliar Flask-WTF em etapa tecnica separada |
-| Broken Access Control | Toda consulta de etapa deve filtrar por `user_id` da tarefa |
-| IDOR | Nunca buscar etapa apenas pelo `id`; validar propriedade pela tarefa e usuario |
+| CSRF | Validacao existente preservada |
+| Broken Access Control | Consultas de etapa filtram pela tarefa, `tenant_id` e `user_id` do usuario autenticado |
+| IDOR | Validado em `tests_e2e_security.py`; etapa alheia nao pode ser listada, editada, alterada, excluida, reordenada nem aparecer no calendario |
 | Mass Assignment | Mapear campos aceitos manualmente no backend |
-| Perda de historico | Registrar acoes de status em `HistoricoEtapa` |
+| Perda de historico | Acoes de status sao registradas em `HistoricoEtapa`; exclusao fisica de etapa remove seu historico nesta versao |
 
 Ponto critico: a feature de etapas cria uma nova superficie de IDOR. Toda rota de etapa precisa garantir que a etapa pertence a uma tarefa do usuario autenticado.
 
@@ -541,18 +595,24 @@ Se for necessario reabrir etapa concluida, isso deve ser uma decisao explicita e
 |------|--------|----------|--------------------|--------------|
 | V5-1 - Confirmar modelo atual | [CONCLUIDO] | Ler `models.py`, rotas e banco atual antes de mexer na estrutura. | Confirmado em 20/07/2026: `models.py` possui `Tenant`, `User`, `Categoria` e `Tarefa`; `Tarefa` usa `tenant_id`, `user_id`, `categoria_id` obrigatorio e `categoria_legado`; SQLite real possui tabelas `tenant`, `user`, `categoria` e `tarefa`, com 3 tenants, 3 usuarios, 28 categorias e 334 tarefas; ainda nao existem `etapa` nem `historico_etapa`. | Iniciar V5-2: aprovar desenho final de `Etapa` e `HistoricoEtapa`. |
 | V5-1A - Banco de desenvolvimento | [CONCLUIDO] | Separar banco de desenvolvimento do banco principal antes das mudancas estruturais. | Confirmado em 20/07/2026: `.env` usa `APP_ENV=Desenvolvimento`; `app.py` seleciona `tarefas-desenvolvimento.db`; `init_db()` roda migracoes no banco selecionado; banco de desenvolvimento validado com `foreign_keys=1`, `foreign_key_check=0`, 3 tenants, 3 usuarios, 28 categorias e 334 tarefas. | Usar somente `tarefas-desenvolvimento.db` durante a implementacao da V5. |
-| V5-2 - Definir modelo de dados | [PENDENTE] | Criar desenho final de `Etapa` e `HistoricoEtapa`. | Campos, constraints, defaults e relacionamentos aprovados. | Comparar proposta deste documento com o codigo real. |
-| V5-3 - Preparar migracao local | [PENDENTE] | Criar backup e atualizar SQLite sem perder tarefas existentes. | Backup em `instance/` e validacao de integridade do banco. | Planejar script/migracao local com rollback manual. |
-| V5-4 - Implementar models ORM | [PENDENTE] | Adicionar models e relacionamentos no SQLAlchemy. | `models.py` compilando e app iniciando. | Implementar somente apos aprovacao. |
-| V5-5 - Implementar regras de negocio | [PENDENTE] | Centralizar criacao, edicao, status, progresso e historico. | Funcoes pequenas e reutilizaveis, sem regra espalhada nos templates. | Definir helpers ou service leve conforme codigo atual. |
-| V5-6 - Implementar rotas | [PENDENTE] | Criar rotas protegidas de etapas e historico. | Rotas retornando 200/redirect esperado com usuario autenticado. | Implementar CRUD e acoes de status. |
-| V5-7 - Implementar interface | [PENDENTE] | Adicionar telas e componentes visuais de etapas. | Templates renderizados sem quebrar layout V4/V5. | Criar telas de lista, cadastro, edicao e historico. |
-| V5-8 - Integrar progresso na lista | [PENDENTE] | Mostrar progresso resumido em `lista_tarefas`. | Progresso correto: etapas concluidas / total de etapas. | Ajustar query/contexto da listagem. |
-| V5-9 - Integrar calendario | [PENDENTE] | Exibir etapas no calendario sem confundir com tarefa principal. | Calendario mostra tarefa e etapas com leitura clara. | Definir visual e filtro para etapas. |
-| V5-10 - Validar seguranca | [PENDENTE] | Bloquear acesso cruzado entre usuarios. | Testes de tentativa de acesso a etapa de outro usuario. | Criar cenarios de IDOR e permissao. |
-| V5-11 - Criar testes minimos | [PENDENTE] | Cobrir fluxo principal da feature. | Testes de model, rotas, status, progresso e historico. | Adicionar testes locais sem CI/CD. |
-| V5-12 - Validacao funcional e visual | [PENDENTE] | Confirmar fluxo no navegador/local. | Evidencia por test client e conferencia visual. | Rodar app local e validar telas principais. |
-| V5-13 - Atualizar documentacao final | [PENDENTE] | Registrar o que foi realmente implementado. | Este arquivo atualizado com status e evidencias reais. | Atualizar apos implementacao validada. |
+| V5-2 - Definir modelo de dados | [CONCLUIDO] | Criar desenho final de `Etapa` e `HistoricoEtapa`. | Confirmado em 20/07/2026: `Etapa` e `HistoricoEtapa` terao `tenant_id`, `user_id`, `tarefa_id`, constraints de status/acao, ordem unica por tarefa e escopo seguro; progresso nao sera persistido, sera calculado pelas etapas concluidas. | Iniciar V5-3: preparar migracao local no banco de desenvolvimento. |
+| V5-3 - Preparar migracao local | [CONCLUIDO] | Criar backup e atualizar SQLite sem perder tarefas existentes. | Confirmado em 20/07/2026: backup criado em `instance/tarefas-desenvolvimento-backup-pre-v5-etapas-20260720-062333.db`; `local_migrations.py` cria `etapa` e `historico_etapa` de forma idempotente; `tarefas-desenvolvimento.db` validado com `foreign_keys=1`, `foreign_key_check=0`, 3 tenants, 3 usuarios, 28 categorias, 334 tarefas, 0 etapas e 0 historicos. | Iniciar V5-4: implementar models ORM correspondentes ao schema criado. |
+
+| V5-4 - Implementar models ORM | [CONCLUIDO] | Adicionar models e relacionamentos no SQLAlchemy. | Confirmado em 20/07/2026: `models.py` possui `Etapa` e `HistoricoEtapa` alinhados ao schema SQLite; app importa em `APP_ENV=Desenvolvimento`; `db.create_all()` executa sem erro; teste transacional criou etapa/historico, validou relacionamento com `Tarefa.etapas` e fez rollback mantendo 0 etapas e 0 historicos. | Iniciar V5-5: implementar regras de negocio para criacao, status, progresso e historico. |
+
+| V5-5 - Implementar regras de negocio | [CONCLUIDO] | Centralizar criacao, edicao, status, progresso e historico. | Confirmado em 20/07/2026: `routes/routes.py` possui helpers para buscar etapa com escopo seguro, criar/editar etapa, alterar status com transicoes controladas, registrar historico, calcular progresso e reordenar etapas; testes transacionais validaram progresso 50%, historico automatico, bloqueio de transicao `Concluida -> Iniciada`, troca de ordem sem violar constraint e rollback mantendo 0 etapas e 0 historicos. | Iniciar V5-6: criar rotas protegidas de etapas e historico. |
+
+| V5-6 - Implementar rotas | [CONCLUIDO] | Criar rotas protegidas de etapas e historico. | Confirmado em 20/07/2026: rotas protegidas criadas para listar, criar, editar, iniciar, pausar, retomar, concluir, deletar, visualizar historico e reordenar etapas; Flask test client validou GET/POST JSON autenticado, progresso 50%, historico com 5 eventos, bloqueio de transicao invalida, reordenacao, delecao e redirecionamento sem login para `/login?next=...`; banco terminou com 0 etapas, 0 historicos e `foreign_key_check=0`. | Iniciar V5-7: criar templates e interface visual das etapas. |
+
+| V5-7 - Implementar interface | [CONCLUIDO] | Adicionar telas e componentes visuais de etapas. | Confirmado em 20/07/2026: criados `lista_etapas.html`, `cadastro_etapa.html`, `editar_etapa.html` e `historico_etapa.html`; GETs de etapas renderizam HTML por padrao e preservam JSON com `format=json` ou `Accept: application/json`; lista de tarefas recebeu atalho para etapas; Flask test client validou lista, cadastro, edicao, historico e JSON com rollback, mantendo 0 etapas e 0 historicos. | Iniciar V5-8: integrar progresso resumido na lista de tarefas. |
+
+| V5-8 - Integrar progresso na lista | [CONCLUIDO] | Mostrar progresso resumido em `lista_tarefas`. | Confirmado em 20/07/2026: `lista_tarefas` calcula progresso das tarefas da pagina via consulta agrupada em `Etapa`, sem N+1; template mostra `concluidas de total etapas`, barra percentual e estado `Sem etapas`; Flask test client validou tarefa temporaria com 1 de 2 etapas e barra 50%, com rollback mantendo 0 etapas e 0 historicos. | Iniciar V5-9: integrar etapas ao calendario. |
+
+| V5-9 - Integrar calendario | [CONCLUIDO] | Exibir etapas no calendario sem confundir com tarefa principal. | Confirmado em 20/07/2026: `/calendario` envia `tarefas_json` e `etapas_json`; a interface combina tarefas e etapas apenas para visualizacao, mantem KPIs/grafico baseados em tarefas principais, diferencia etapas com card tracejado, badge `Etapa`, pontos marcados e filtro de tipo; etapas nao usam drag-and-drop de tarefa. Flask test client validou tarefa e etapa temporarias no calendario, Node validou sintaxe JS renderizada e rollback manteve 0 etapas e 0 historicos. | Iniciar V5-10: validar seguranca contra acesso cruzado entre usuarios. |
+| V5-10 - Validar seguranca | [CONCLUIDO] | Bloquear acesso cruzado entre usuarios. | Confirmado em 20/07/2026: criado `tests_e2e_security.py` com banco SQLite temporario e dois usuarios/tenants; validado que usuario B recebe bloqueio ao tentar listar etapas da tarefa do usuario A, editar etapa alheia, iniciar etapa alheia, ver historico alheio, deletar etapa alheia e reordenar etapa alheia dentro de tarefa propria; calendario de B nao renderiza tarefa/etapa de A. Execucao: `.venv\Scripts\python.exe tests_e2e_security.py` passou com 4 testes. | Iniciar V5-11: criar testes minimos do fluxo principal da feature. |
+| V5-11 - Criar testes minimos | [CONCLUIDO] | Cobrir fluxo principal da feature. | Confirmado em 20/07/2026: criado `tests_e2e_crud.py` com `unittest` e app Flask de teste proprio usando SQLite temporario; validado fluxo principal de etapas com criacao, edicao, transicoes `Criada -> Iniciada -> Pausada -> Iniciada -> Concluida`, bloqueio de transicao invalida, historico automatico, progresso 1 de 2 etapas/50%, renderizacao HTML de lista/cadastro/edicao/historico e reordenacao. `tests_e2e_security.py` tambem foi ajustado para usar app de teste proprio e nao tocar no banco real. Execucao: `.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security` passou com 7 testes. Banco de desenvolvimento restaurado/validado com `foreign_keys=1`, `foreign_key_check_count=0`, 3 tenants, 3 usuarios, 28 categorias, 334 tarefas, 0 etapas e 0 historicos. | Iniciar V5-12: validacao funcional e visual no servidor local. |
+| V5-12 - Validacao funcional e visual | [CONCLUIDO] com ressalva | Confirmar fluxo no navegador/local. | Confirmado em 20/07/2026: criado `tests_e2e_visual.py` com servidor Werkzeug real em `127.0.0.1:5050`, app Flask de teste proprio e SQLite temporario; validado login HTTP, HTML renderizado de `/lista_tarefas`, `/tarefas/<id>/etapas`, `/tarefas/<id>/etapas/nova`, `/etapas/<id>/editar`, `/etapas/<id>/historico`, `/calendario` e JSON de `/tarefas/<id>/etapas?format=json`; verificados progresso 1 de 2/50%, badges/status de etapas, historico, filtro de tipo no calendario e ausencia de `Traceback`/`Internal Server Error`. Revalidado em 21/07/2026 com `.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual`, passando com 11 testes. Banco de desenvolvimento preservado com `foreign_keys=1`, `foreign_key_check_count=0`, 3 tenants, 3 usuarios, 28 categorias, 334 tarefas, 0 etapas e 0 historicos. Ressalva: browser integrado indisponivel na validacao inicial (`agent.browsers.list()` retornou `[]`), portanto nao houve screenshot/manual browser real. | Iniciar V5-13: atualizar documentacao final da feature. |
+| V5-13 - Atualizar documentacao final | [CONCLUIDO] | Registrar o que foi realmente implementado. | Confirmado em 20/07/2026: `README.md` atualizado com escopo V5, ambiente `.venv`, `APP_ENV=Desenvolvimento`, banco de desenvolvimento, modelos, rotas e comando de validacao; este `mapa_projetoV5.md` atualizado de planejamento para documentacao final da feature, com status, evidencias, ressalvas e decisoes adiadas. Revalidado em 21/07/2026 com `.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual`, passando com 11 testes. Banco de desenvolvimento preservado com `foreign_keys=1`, `foreign_key_check_count=0`, 3 tenants, 3 usuarios, 28 categorias, 334 tarefas, 0 etapas e 0 historicos. | V5 encerrada; proximas melhorias devem abrir nova etapa/versao. |
 
 ### 9.3 Escopo Funcional da Primeira Entrega
 
@@ -580,7 +640,7 @@ Fica fora da primeira entrega:
 
 ### 9.4 Criterios de Pronto
 
-A feature so deve ser marcada como concluida quando:
+A feature foi marcada como concluida porque:
 
 - o banco possuir tabelas `etapa` e `historico_etapa` com integridade validada;
 - toda etapa estiver vinculada a uma tarefa existente;
@@ -591,7 +651,9 @@ A feature so deve ser marcada como concluida quando:
 - a listagem de tarefas mostrar progresso sem quebrar filtros e paginacao;
 - as telas novas renderizarem no tema atual;
 - houver teste local minimo do fluxo principal;
-- houver validacao manual ou via test client das rotas principais.
+- houve validacao via test client e servidor Werkzeug real das rotas principais.
+
+Ressalva: o browser integrado ficou indisponivel nesta sessao, portanto a validacao visual foi feita por HTML renderizado e servidor local de teste, sem screenshot/manual browser real.
 
 ### 9.5 Ordem Recomendada de Implementacao
 
@@ -609,7 +671,19 @@ A feature so deve ser marcada como concluida quando:
 12. Validar visualmente no servidor local.
 13. Atualizar status deste roadmap com evidencias.
 
-### 9.6 Riscos Tecnicos
+### 9.6 Resultado Final da V5
+
+A V5 entregou etapas de execucao vinculadas a tarefas, com CRUD, historico automatico, regras de transicao, reordenacao, progresso resumido na lista de tarefas, exibicao no calendario, duplicacao controlada das etapas junto com a tarefa e testes locais de fluxo, seguranca e renderizacao.
+
+Decisoes adiadas para versao futura:
+
+- bloquear conclusao da tarefa quando existirem etapas pendentes;
+- responsavel por etapa;
+- peso de etapa;
+- dependencia entre etapas;
+- filtro de status de etapa diretamente na lista de tarefas.
+
+### 9.7 Riscos Tecnicos
 
 | Risco | Severidade | Mitigacao |
 |-------|------------|-----------|
@@ -630,10 +704,10 @@ A feature so deve ser marcada como concluida quando:
 | V2 | Jan 2026 | Filtros, paginacao, categorias fixas |
 | V3 | Fev 2026 | Categorias dinamicas, comentarios, filtros persistentes |
 | V4 | Mar 2026 | Tema dark/light, redesign completo, filtro de busca por texto |
-| V5 | Jul 2026 | Planejamento de etapas de execucao, historico de etapas e progresso automatico |
+| V5 | Jul 2026 | Etapas de execucao implementadas, historico de etapas, progresso automatico e integracao com calendario |
 
 ---
 
-**Ultima atualizacao:** 19/07/2026
+**Ultima atualizacao:** 20/07/2026
 **Versao do documento:** 5.0
 **Mantido por:** Mauricio

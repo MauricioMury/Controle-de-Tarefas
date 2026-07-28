@@ -3,10 +3,40 @@ import json
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import contains_eager
 
-from models import Categoria, Tarefa, db
+from models import Categoria, Etapa, HistoricoEtapa, Tarefa, db
+
+
+STATUS_ETAPA_CRIADA = 'Criada'
+STATUS_ETAPA_INICIADA = 'Iniciada'
+STATUS_ETAPA_PAUSADA = 'Pausada'
+STATUS_ETAPA_CONCLUIDA = 'Concluida'
+STATUS_ETAPA_PERMITIDOS = {
+    STATUS_ETAPA_CRIADA,
+    STATUS_ETAPA_INICIADA,
+    STATUS_ETAPA_PAUSADA,
+    STATUS_ETAPA_CONCLUIDA,
+}
+
+ACOES_HISTORICO_ETAPA = {
+    'criar',
+    'editar',
+    'iniciar',
+    'pausar',
+    'retomar',
+    'concluir',
+    'excluir',
+    'reordenar',
+}
+
+TRANSICOES_STATUS_ETAPA = {
+    STATUS_ETAPA_CRIADA: {STATUS_ETAPA_INICIADA},
+    STATUS_ETAPA_INICIADA: {STATUS_ETAPA_PAUSADA, STATUS_ETAPA_CONCLUIDA},
+    STATUS_ETAPA_PAUSADA: {STATUS_ETAPA_INICIADA, STATUS_ETAPA_CONCLUIDA},
+    STATUS_ETAPA_CONCLUIDA: set(),
+}
 
 
 def parse_notif_datetime(valor_str):
@@ -117,6 +147,241 @@ def buscar_tarefa_ou_404(tarefa_id):
     ).first_or_404()
 
 
+def buscar_etapa_ou_404(etapa_id):
+    return Etapa.query.join(Tarefa, Etapa.tarefa_id == Tarefa.id).filter(
+        Etapa.id == etapa_id,
+        Etapa.tenant_id == get_current_tenant_id(),
+        Etapa.user_id == get_local_user_id(),
+        Tarefa.tenant_id == get_current_tenant_id(),
+        Tarefa.user_id == get_local_user_id(),
+    ).first_or_404()
+
+
+def etapas_da_tarefa_query(tarefa):
+    return Etapa.query.filter_by(
+        tarefa_id=tarefa.id,
+        tenant_id=get_current_tenant_id(),
+        user_id=get_local_user_id(),
+    ).order_by(Etapa.ordem)
+
+
+def proxima_ordem_etapa(tarefa):
+    maior_ordem = db.session.query(func.max(Etapa.ordem)).filter_by(
+        tarefa_id=tarefa.id,
+        tenant_id=get_current_tenant_id(),
+        user_id=get_local_user_id(),
+    ).scalar()
+    return (maior_ordem or 0) + 1
+
+
+def calcular_progresso_tarefa(tarefa):
+    etapas = etapas_da_tarefa_query(tarefa).all()
+    total = len(etapas)
+    concluidas = sum(1 for etapa in etapas if etapa.status == STATUS_ETAPA_CONCLUIDA)
+    progresso = int((concluidas / total) * 100) if total else 0
+    return {
+        'total': total,
+        'concluidas': concluidas,
+        'progresso': progresso,
+    }
+
+
+def calcular_progressos_tarefas(tarefas):
+    tarefa_ids = [tarefa.id for tarefa in tarefas]
+    if not tarefa_ids:
+        return {}
+
+    linhas = db.session.query(
+        Etapa.tarefa_id,
+        func.count(Etapa.id).label('total'),
+        func.sum(
+            case(
+                (Etapa.status == STATUS_ETAPA_CONCLUIDA, 1),
+                else_=0,
+            )
+        ).label('concluidas'),
+    ).filter(
+        Etapa.tarefa_id.in_(tarefa_ids),
+        Etapa.tenant_id == get_current_tenant_id(),
+        Etapa.user_id == get_local_user_id(),
+    ).group_by(Etapa.tarefa_id).all()
+
+    progressos = {
+        tarefa_id: {
+            'total': 0,
+            'concluidas': 0,
+            'progresso': 0,
+        }
+        for tarefa_id in tarefa_ids
+    }
+
+    for linha in linhas:
+        total = linha.total or 0
+        concluidas = linha.concluidas or 0
+        progressos[linha.tarefa_id] = {
+            'total': total,
+            'concluidas': concluidas,
+            'progresso': int((concluidas / total) * 100) if total else 0,
+        }
+
+    return progressos
+
+
+def validar_status_etapa(status):
+    if status not in STATUS_ETAPA_PERMITIDOS:
+        raise ValueError('Status de etapa inválido.')
+
+
+def validar_acao_historico_etapa(acao):
+    if acao not in ACOES_HISTORICO_ETAPA:
+        raise ValueError('Ação de histórico de etapa inválida.')
+
+
+def registrar_historico_etapa(etapa, acao, descricao=None):
+    validar_acao_historico_etapa(acao)
+    historico = HistoricoEtapa(
+        tarefa_id=etapa.tarefa_id,
+        etapa_id=etapa.id,
+        tenant_id=etapa.tenant_id,
+        user_id=etapa.user_id,
+        acao=acao,
+        descricao=descricao,
+    )
+    db.session.add(historico)
+    return historico
+
+
+def criar_etapa(tarefa, dados):
+    titulo = (dados.get('titulo') or '').strip()
+    if not titulo:
+        raise ValueError('Informe o título da etapa.')
+
+    status = dados.get('status') or STATUS_ETAPA_CRIADA
+    validar_status_etapa(status)
+
+    hora_inicio = dados.get('hora_inicio')
+    hora_fim = dados.get('hora_fim')
+    if hora_inicio and hora_fim and hora_fim <= hora_inicio:
+        raise ValueError('A hora de fim da etapa deve ser posterior à hora de início.')
+
+    etapa = Etapa(
+        tarefa_id=tarefa.id,
+        tenant_id=tarefa.tenant_id,
+        user_id=tarefa.user_id,
+        titulo=titulo,
+        descricao=(dados.get('descricao') or '').strip() or None,
+        ordem=dados.get('ordem') or proxima_ordem_etapa(tarefa),
+        data_planejada=dados.get('data_planejada'),
+        hora_inicio=hora_inicio,
+        hora_fim=hora_fim,
+        status=status,
+        concluida_em=datetime.utcnow() if status == STATUS_ETAPA_CONCLUIDA else None,
+    )
+    db.session.add(etapa)
+    db.session.flush()
+    registrar_historico_etapa(etapa, 'criar', 'Etapa criada.')
+    return etapa
+
+
+def copiar_etapas_para_tarefa(tarefa_origem, tarefa_destino):
+    etapas_origem = etapas_da_tarefa_query(tarefa_origem).all()
+    etapas_copiadas = []
+    for etapa_origem in etapas_origem:
+        etapa_copiada = criar_etapa(tarefa_destino, {
+            'titulo': etapa_origem.titulo,
+            'descricao': etapa_origem.descricao,
+            'ordem': etapa_origem.ordem,
+            'data_planejada': tarefa_destino.data_meta,
+            'hora_inicio': etapa_origem.hora_inicio,
+            'hora_fim': etapa_origem.hora_fim,
+            'status': STATUS_ETAPA_CRIADA,
+        })
+        etapas_copiadas.append(etapa_copiada)
+    return etapas_copiadas
+
+
+def aplicar_dados_etapa(etapa, dados):
+    titulo = (dados.get('titulo') or '').strip()
+    if not titulo:
+        raise ValueError('Informe o título da etapa.')
+
+    hora_inicio = dados.get('hora_inicio')
+    hora_fim = dados.get('hora_fim')
+    if hora_inicio and hora_fim and hora_fim <= hora_inicio:
+        raise ValueError('A hora de fim da etapa deve ser posterior à hora de início.')
+
+    etapa.titulo = titulo
+    etapa.descricao = (dados.get('descricao') or '').strip() or None
+    etapa.data_planejada = dados.get('data_planejada')
+    etapa.hora_inicio = hora_inicio
+    etapa.hora_fim = hora_fim
+    etapa.updated_at = datetime.utcnow()
+    registrar_historico_etapa(etapa, 'editar', 'Etapa editada.')
+    return etapa
+
+
+def alterar_status_etapa(etapa, novo_status, descricao=None):
+    validar_status_etapa(novo_status)
+    status_atual = etapa.status
+    if novo_status == status_atual:
+        return etapa
+    if novo_status not in TRANSICOES_STATUS_ETAPA.get(status_atual, set()):
+        raise ValueError(f'Transição de status inválida: {status_atual} -> {novo_status}.')
+
+    etapa.status = novo_status
+    etapa.updated_at = datetime.utcnow()
+    if novo_status == STATUS_ETAPA_INICIADA and not etapa.hora_inicio:
+        etapa.hora_inicio = datetime.utcnow().time().replace(microsecond=0)
+    if novo_status == STATUS_ETAPA_CONCLUIDA:
+        agora = datetime.utcnow()
+        etapa.concluida_em = agora
+        if not etapa.hora_fim:
+            etapa.hora_fim = agora.time().replace(microsecond=0)
+
+    acao_por_status = {
+        STATUS_ETAPA_INICIADA: 'iniciar' if status_atual == STATUS_ETAPA_CRIADA else 'retomar',
+        STATUS_ETAPA_PAUSADA: 'pausar',
+        STATUS_ETAPA_CONCLUIDA: 'concluir',
+    }
+    registrar_historico_etapa(
+        etapa,
+        acao_por_status[novo_status],
+        descricao or f'Status alterado de {status_atual} para {novo_status}.',
+    )
+    return etapa
+
+
+def reordenar_etapas(tarefa, etapas_ordenadas):
+    ids_informados = [etapa_id for etapa_id, _ordem in etapas_ordenadas]
+    etapas = Etapa.query.filter(
+        Etapa.tarefa_id == tarefa.id,
+        Etapa.tenant_id == get_current_tenant_id(),
+        Etapa.user_id == get_local_user_id(),
+        Etapa.id.in_(ids_informados),
+    ).all()
+    etapas_por_id = {etapa.id: etapa for etapa in etapas}
+
+    if len(etapas_por_id) != len(set(ids_informados)):
+        raise ValueError('Lista de etapas inválida para esta tarefa.')
+
+    ordens = [ordem for _etapa_id, ordem in etapas_ordenadas]
+    if len(ordens) != len(set(ordens)):
+        raise ValueError('A ordem das etapas não pode conter duplicidade.')
+
+    for indice, etapa_id in enumerate(ids_informados, start=1):
+        etapa = etapas_por_id[etapa_id]
+        etapa.ordem = -indice
+    db.session.flush()
+
+    for etapa_id, ordem in etapas_ordenadas:
+        etapa = etapas_por_id[etapa_id]
+        etapa.ordem = ordem
+        etapa.updated_at = datetime.utcnow()
+        registrar_historico_etapa(etapa, 'reordenar', f'Ordem alterada para {ordem}.')
+
+    return list(etapas_por_id.values())
+
+
 def categorias_do_usuario():
     return Categoria.query.filter_by(
         tenant_id=get_current_tenant_id(),
@@ -218,6 +483,86 @@ def aplicar_dados_tarefa(tarefa, dados):
         tarefa.notif_email_enviada_2 = False
         tarefa.notif_whatsapp_enviada_2 = False
     tarefa.notif_datetime_2 = dados['notif_datetime_2']
+
+
+def etapa_to_dict(etapa):
+    return {
+        'id': etapa.id,
+        'tarefa_id': etapa.tarefa_id,
+        'titulo': etapa.titulo,
+        'descricao': etapa.descricao or '',
+        'ordem': etapa.ordem,
+        'data_planejada': etapa.data_planejada.strftime('%Y-%m-%d') if etapa.data_planejada else '',
+        'hora_inicio': etapa.hora_inicio.strftime('%H:%M') if etapa.hora_inicio else '',
+        'hora_fim': etapa.hora_fim.strftime('%H:%M') if etapa.hora_fim else '',
+        'status': etapa.status,
+        'concluida_em': etapa.concluida_em.isoformat() if etapa.concluida_em else '',
+        'created_at': etapa.created_at.isoformat() if etapa.created_at else '',
+        'updated_at': etapa.updated_at.isoformat() if etapa.updated_at else '',
+    }
+
+
+def historico_etapa_to_dict(historico):
+    return {
+        'id': historico.id,
+        'tarefa_id': historico.tarefa_id,
+        'etapa_id': historico.etapa_id,
+        'acao': historico.acao,
+        'descricao': historico.descricao or '',
+        'created_at': historico.created_at.isoformat() if historico.created_at else '',
+    }
+
+
+def quer_resposta_json():
+    return request.is_json or request.args.get('format') == 'json' or (
+        request.accept_mimetypes.best == 'application/json'
+        and request.accept_mimetypes['application/json'] > request.accept_mimetypes['text/html']
+    )
+
+
+def dados_etapa_request():
+    data = request.get_json(silent=True) if request.is_json else request.form
+    data = data or {}
+    ordem_valor = data.get('ordem')
+    return {
+        'titulo': data.get('titulo'),
+        'descricao': data.get('descricao', ''),
+        'ordem': int(ordem_valor) if ordem_valor else None,
+        'data_planejada': parse_optional_date(data.get('data_planejada')),
+        'hora_inicio': parse_optional_time(data.get('hora_inicio')),
+        'hora_fim': parse_optional_time(data.get('hora_fim')),
+        'status': data.get('status') or STATUS_ETAPA_CRIADA,
+    }
+
+
+def resposta_etapa_salva(tarefa_id, mensagem):
+    if request.is_json:
+        return jsonify({'ok': True, 'mensagem': mensagem})
+    flash(mensagem, 'success')
+    return redirect(url_for('listar_etapas_tarefa', id=tarefa_id))
+
+
+def resposta_erro_etapa(mensagem, status_code=400):
+    if request.is_json:
+        return jsonify({'ok': False, 'erro': mensagem}), status_code
+    flash(mensagem, 'danger')
+    return redirect(request.referrer or url_for('lista_tarefas'))
+
+
+def alterar_status_etapa_route(etapa_id, novo_status, mensagem):
+    etapa = buscar_etapa_ou_404(etapa_id)
+    try:
+        alterar_status_etapa(etapa, novo_status)
+        db.session.commit()
+        if request.is_json:
+            return jsonify({'ok': True, 'mensagem': mensagem, 'etapa': etapa_to_dict(etapa)})
+        return resposta_etapa_salva(etapa.tarefa_id, mensagem)
+    except ValueError as e:
+        db.session.rollback()
+        return resposta_erro_etapa(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        return resposta_erro_etapa(f'Erro ao alterar status da etapa: {str(e)}', 500)
 
 
 def register_routes(app):
@@ -326,6 +671,10 @@ def register_routes(app):
             try:
                 dados = dados_tarefa_form()
                 nova_tarefa = montar_tarefa(dados)
+                tarefa_origem = None
+                duplicate_id = request.form.get('duplicate_id', type=int)
+                if duplicate_id:
+                    tarefa_origem = buscar_tarefa_ou_404(duplicate_id)
             except ValueError as e:
                 flash(str(e), 'danger')
                 return render_template('cadastro_tarefa.html', categorias=categorias)
@@ -334,9 +683,15 @@ def register_routes(app):
             else:
                 try:
                     db.session.add(nova_tarefa)
+                    db.session.flush()
+                    if tarefa_origem:
+                        copiar_etapas_para_tarefa(tarefa_origem, nova_tarefa)
                     db.session.commit()
 
-                    flash('Tarefa cadastrada com sucesso!', 'success')
+                    if tarefa_origem:
+                        flash('Tarefa e etapas duplicadas com sucesso!', 'success')
+                    else:
+                        flash('Tarefa cadastrada com sucesso!', 'success')
                     return redirect_com_filtros('lista_tarefas')
                 except Exception as e:
                     db.session.rollback()
@@ -405,10 +760,12 @@ def register_routes(app):
         end = start + per_page
         tarefas_paginadas = tarefas_ordenadas[start:end]
         total_pages = (total + per_page - 1) // per_page
+        progressos_por_tarefa = calcular_progressos_tarefas(tarefas_paginadas)
 
         return render_template(
             'lista_tarefas.html',
             tarefas=tarefas_paginadas,
+            progressos_por_tarefa=progressos_por_tarefa,
             categorias=categorias,
             page=page,
             per_page=per_page,
@@ -443,7 +800,13 @@ def register_routes(app):
                 db.session.rollback()
                 flash(f'Erro ao atualizar tarefa: {str(e)}', 'danger')
 
-        return render_template('editar_tarefa.html', tarefa=tarefa, categorias=categorias, filtros=get_filtros_ativos())
+        return render_template(
+            'editar_tarefa.html',
+            tarefa=tarefa,
+            categorias=categorias,
+            progresso=calcular_progresso_tarefa(tarefa),
+            filtros=get_filtros_ativos(),
+        )
 
     @app.route('/duplicar_tarefa/<int:id>')
     @login_required
@@ -485,6 +848,180 @@ def register_routes(app):
         flash('Tarefa marcada como concluída!', 'success')
         return redirect_com_filtros('lista_tarefas')
 
+    @app.route('/tarefas/<int:id>/etapas')
+    @login_required
+    def listar_etapas_tarefa(id):
+        """Lista etapas da tarefa."""
+        tarefa = buscar_tarefa_ou_404(id)
+        etapas = etapas_da_tarefa_query(tarefa).all()
+        progresso = calcular_progresso_tarefa(tarefa)
+        if quer_resposta_json():
+            return jsonify({
+                'ok': True,
+                'tarefa': {
+                    'id': tarefa.id,
+                    'titulo': tarefa.tarefa,
+                    'status': tarefa.status,
+                    'data_meta': tarefa.data_meta.strftime('%Y-%m-%d'),
+                },
+                'progresso': progresso,
+                'etapas': [etapa_to_dict(etapa) for etapa in etapas],
+            })
+        return render_template(
+            'lista_etapas.html',
+            tarefa=tarefa,
+            etapas=etapas,
+            progresso=progresso,
+            transicoes_status=TRANSICOES_STATUS_ETAPA,
+        )
+
+    @app.route('/tarefas/<int:id>/etapas/nova', methods=['GET', 'POST'])
+    @login_required
+    def nova_etapa(id):
+        """Cria etapa para uma tarefa."""
+        tarefa = buscar_tarefa_ou_404(id)
+        if request.method == 'GET':
+            proxima_ordem = proxima_ordem_etapa(tarefa)
+            if quer_resposta_json():
+                return jsonify({
+                    'ok': True,
+                    'tarefa_id': tarefa.id,
+                    'proxima_ordem': proxima_ordem,
+                    'status_permitidos': sorted(STATUS_ETAPA_PERMITIDOS),
+                })
+            return render_template(
+                'cadastro_etapa.html',
+                tarefa=tarefa,
+                proxima_ordem=proxima_ordem,
+                status_permitidos=sorted(STATUS_ETAPA_PERMITIDOS),
+            )
+
+        try:
+            etapa = criar_etapa(tarefa, dados_etapa_request())
+            db.session.commit()
+            if request.is_json:
+                return jsonify({'ok': True, 'mensagem': 'Etapa criada com sucesso.', 'etapa': etapa_to_dict(etapa)}), 201
+            return resposta_etapa_salva(tarefa.id, 'Etapa criada com sucesso.')
+        except ValueError as e:
+            db.session.rollback()
+            return resposta_erro_etapa(str(e), 400)
+        except Exception as e:
+            db.session.rollback()
+            return resposta_erro_etapa(f'Erro ao criar etapa: {str(e)}', 500)
+
+    @app.route('/etapas/<int:id>/editar', methods=['GET', 'POST'])
+    @login_required
+    def editar_etapa(id):
+        """Edita etapa existente."""
+        etapa = buscar_etapa_ou_404(id)
+        if request.method == 'GET':
+            if quer_resposta_json():
+                return jsonify({'ok': True, 'etapa': etapa_to_dict(etapa)})
+            return render_template(
+                'editar_etapa.html',
+                tarefa=etapa.tarefa_ref,
+                etapa=etapa,
+            )
+
+        try:
+            aplicar_dados_etapa(etapa, dados_etapa_request())
+            db.session.commit()
+            if request.is_json:
+                return jsonify({'ok': True, 'mensagem': 'Etapa atualizada com sucesso.', 'etapa': etapa_to_dict(etapa)})
+            return resposta_etapa_salva(etapa.tarefa_id, 'Etapa atualizada com sucesso.')
+        except ValueError as e:
+            db.session.rollback()
+            return resposta_erro_etapa(str(e), 400)
+        except Exception as e:
+            db.session.rollback()
+            return resposta_erro_etapa(f'Erro ao atualizar etapa: {str(e)}', 500)
+
+    @app.route('/etapas/<int:id>/iniciar', methods=['POST'])
+    @login_required
+    def iniciar_etapa(id):
+        return alterar_status_etapa_route(id, STATUS_ETAPA_INICIADA, 'Etapa iniciada com sucesso.')
+
+    @app.route('/etapas/<int:id>/pausar', methods=['POST'])
+    @login_required
+    def pausar_etapa(id):
+        return alterar_status_etapa_route(id, STATUS_ETAPA_PAUSADA, 'Etapa pausada com sucesso.')
+
+    @app.route('/etapas/<int:id>/retomar', methods=['POST'])
+    @login_required
+    def retomar_etapa(id):
+        return alterar_status_etapa_route(id, STATUS_ETAPA_INICIADA, 'Etapa retomada com sucesso.')
+
+    @app.route('/etapas/<int:id>/concluir', methods=['POST'])
+    @login_required
+    def concluir_etapa(id):
+        return alterar_status_etapa_route(id, STATUS_ETAPA_CONCLUIDA, 'Etapa concluída com sucesso.')
+
+    @app.route('/etapas/<int:id>/deletar', methods=['POST'])
+    @login_required
+    def deletar_etapa(id):
+        etapa = buscar_etapa_ou_404(id)
+        tarefa_id = etapa.tarefa_id
+        try:
+            HistoricoEtapa.query.filter_by(
+                etapa_id=etapa.id,
+                tenant_id=get_current_tenant_id(),
+                user_id=get_local_user_id(),
+            ).delete(synchronize_session=False)
+            db.session.delete(etapa)
+            db.session.commit()
+            return resposta_etapa_salva(tarefa_id, 'Etapa deletada com sucesso.')
+        except Exception as e:
+            db.session.rollback()
+            return resposta_erro_etapa(f'Erro ao deletar etapa: {str(e)}', 500)
+
+    @app.route('/etapas/<int:id>/historico')
+    @login_required
+    def historico_etapa(id):
+        etapa = buscar_etapa_ou_404(id)
+        historicos = HistoricoEtapa.query.filter_by(
+            etapa_id=etapa.id,
+            tarefa_id=etapa.tarefa_id,
+            tenant_id=get_current_tenant_id(),
+            user_id=get_local_user_id(),
+        ).order_by(HistoricoEtapa.created_at.desc(), HistoricoEtapa.id.desc()).all()
+        if quer_resposta_json():
+            return jsonify({
+                'ok': True,
+                'etapa': etapa_to_dict(etapa),
+                'historico': [historico_etapa_to_dict(historico) for historico in historicos],
+            })
+        return render_template(
+            'historico_etapa.html',
+            tarefa=etapa.tarefa_ref,
+            etapa=etapa,
+            historicos=historicos,
+        )
+
+    @app.route('/tarefas/<int:id>/etapas/reordenar', methods=['POST'])
+    @login_required
+    def reordenar_etapas_tarefa(id):
+        tarefa = buscar_tarefa_ou_404(id)
+        data = request.get_json(silent=True) or {}
+        etapas_payload = data.get('etapas') or []
+        try:
+            etapas_ordenadas = [
+                (int(item['id']), int(item['ordem']))
+                for item in etapas_payload
+            ]
+            etapas = reordenar_etapas(tarefa, etapas_ordenadas)
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'mensagem': 'Etapas reordenadas com sucesso.',
+                'etapas': [etapa_to_dict(etapa) for etapa in sorted(etapas, key=lambda e: e.ordem)],
+            })
+        except (KeyError, TypeError, ValueError) as e:
+            db.session.rollback()
+            return jsonify({'ok': False, 'erro': str(e)}), 400
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'ok': False, 'erro': f'Erro ao reordenar etapas: {str(e)}'}), 500
+
     @app.route('/calendario')
     @login_required
     def calendario():
@@ -497,10 +1034,22 @@ def register_routes(app):
             Categoria.tenant_id == get_current_tenant_id(),
             Categoria.user_id == get_local_user_id(),
         ).all()
+        etapas = Etapa.query.join(Tarefa, Etapa.tarefa_id == Tarefa.id).join(
+            Categoria, Tarefa.categoria_id == Categoria.id
+        ).filter(
+            Etapa.tenant_id == get_current_tenant_id(),
+            Etapa.user_id == get_local_user_id(),
+            Etapa.data_planejada.isnot(None),
+            Tarefa.tenant_id == get_current_tenant_id(),
+            Tarefa.user_id == get_local_user_id(),
+            Categoria.tenant_id == get_current_tenant_id(),
+            Categoria.user_id == get_local_user_id(),
+        ).order_by(Etapa.data_planejada, Etapa.hora_inicio, Etapa.ordem).all()
         categorias = categorias_do_usuario()
 
         tarefas_json = json.dumps([{
             'id': t.id,
+            'tipo': 'tarefa',
             'tarefa': t.tarefa,
             'comentario': t.comentario or '',
             'data_meta': t.data_meta.strftime('%Y-%m-%d'),
@@ -512,6 +1061,22 @@ def register_routes(app):
             'status': t.status,
         } for t in tarefas], ensure_ascii=False)
 
+        etapas_json = json.dumps([{
+            'id': e.id,
+            'tipo': 'etapa',
+            'tarefa_id': e.tarefa_id,
+            'tarefa': e.titulo,
+            'tarefa_principal': e.tarefa_ref.tarefa,
+            'comentario': e.descricao or '',
+            'data_meta': e.data_planejada.strftime('%Y-%m-%d'),
+            'hora_inicio': e.hora_inicio.strftime('%H:%M') if e.hora_inicio else '',
+            'hora_fim': e.hora_fim.strftime('%H:%M') if e.hora_fim else '',
+            'prioridade': e.tarefa_ref.prioridade,
+            'categoria_id': e.tarefa_ref.categoria_id,
+            'categoria': e.tarefa_ref.categoria.nome,
+            'status': e.status,
+        } for e in etapas], ensure_ascii=False)
+
         categorias_json = json.dumps([{
             'id': c.id,
             'nome': c.nome,
@@ -521,6 +1086,7 @@ def register_routes(app):
         return render_template(
             'calendario.html',
             tarefas_json=tarefas_json,
+            etapas_json=etapas_json,
             categorias_json=categorias_json,
         )
 
