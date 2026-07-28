@@ -250,6 +250,22 @@ class V5EtapasCrudTestCase(unittest.TestCase):
     def test_validacoes_de_criacao_e_status(self):
         self._login()
 
+        response = self.client.post('/cadastro_tarefa', data={
+            'tarefa': 'Tarefa sem categoria',
+            'comentario': '',
+            'data_meta': '2026-07-22',
+            'data_realizado': '',
+            'hora_inicio': '',
+            'hora_fim': '',
+            'prioridade': 'Normal',
+            'recorrencia': 'ESPORÃDICO',
+            'categoria_id': '999999',
+        })
+        self.assertEqual(200, response.status_code)
+        html = response.get_data(as_text=True)
+        self.assertIn('/lista_tarefas?categoria=', html)
+        self.assertIn('Cadastrar Nova Tarefa', html)
+
         response = self.client.post(f'/tarefas/{self.tarefa_id}/etapas/nova', json={
             'titulo': '   ',
             'data_planejada': '2026-07-20',
