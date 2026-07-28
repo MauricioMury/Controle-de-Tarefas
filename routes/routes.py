@@ -666,6 +666,7 @@ def register_routes(app):
     def cadastro_tarefa():
         """Cadastro de nova tarefa."""
         categorias = categorias_do_usuario()
+        filtros = get_filtros_ativos()
 
         if request.method == 'POST':
             try:
@@ -677,7 +678,7 @@ def register_routes(app):
                     tarefa_origem = buscar_tarefa_ou_404(duplicate_id)
             except ValueError as e:
                 flash(str(e), 'danger')
-                return render_template('cadastro_tarefa.html', categorias=categorias)
+                return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros)
             except Exception as e:
                 flash(f'Erro ao cadastrar tarefa: {str(e)}', 'danger')
             else:
@@ -696,9 +697,7 @@ def register_routes(app):
                 except Exception as e:
                     db.session.rollback()
                     flash(f'Erro ao cadastrar tarefa: {str(e)}', 'danger')
-                    return render_template('cadastro_tarefa.html', categorias=categorias)
-
-        filtros = get_filtros_ativos()
+                    return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros)
 
         return render_template(
             'cadastro_tarefa.html',
