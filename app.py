@@ -45,13 +45,13 @@ csrf = CSRFProtect(app)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-login_manager.login_message = 'Faça login para acessar esta página.'
+login_manager.login_message = None
 login_manager.login_message_category = 'warning'
 
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 @app.after_request

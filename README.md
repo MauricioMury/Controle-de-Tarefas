@@ -1,21 +1,22 @@
 # Controle de tarefas
 
-Workspace: `02-CONTROLETAREFAS
+Workspace: `02-CONTROLETAREFAS`
 
 ## Visao geral
 
-O **Controle de tarefas** e uma aplicacao web em Python/Flask para organizar tarefas pessoais por usuario. O sistema permite cadastrar tarefas, classificar por categoria e prioridade, acompanhar status, consultar calendario, aplicar filtros persistentes e configurar notificacoes.
+O **Controle de tarefas** e uma aplicacao web em Python/Flask para organizar tarefas pessoais por usuario. O sistema permite cadastrar tarefas, dividir tarefas em etapas de execucao, classificar por categoria e prioridade, acompanhar status, consultar calendario, aplicar filtros persistentes e configurar notificacoes.
 
-Este repositorio corresponde ao workspace local `03-LOGTAREFASPESSOAIS`, mas o nome funcional do sistema e **Controle de tarefas**.
+Este repositorio corresponde ao workspace local `02-ControleTarefas`, e o nome funcional do sistema e **Controle de tarefas**.
 
 ## Funcionalidades principais
 
 - Autenticacao de usuarios com login, logout e cadastro.
 - Dashboard inicial com visao resumida das tarefas.
 - Cadastro, edicao, duplicacao, conclusao e exclusao de tarefas.
+- Etapas de execucao vinculadas a tarefas, com ordem, status proprio, progresso e historico.
 - Lista de tarefas com busca, filtros, paginacao e persistencia de filtros por sessao.
 - Cadastro e manutencao de categorias por usuario.
-- Calendario visual de tarefas.
+- Calendario visual de tarefas e etapas planejadas.
 - Entrada rapida para movimentacao e organizacao de tarefas.
 - Perfil do usuario com configuracao de notificacoes.
 - Notificacoes por e-mail e WhatsApp, quando configuradas.
@@ -40,19 +41,26 @@ As dependencias do projeto estao declaradas em `requirements.txt`.
 
 ```text
 .
-|-- app.py                  # Aplicacao Flask principal, rotas e regras de negocio
-|-- models.py               # Modelos SQLAlchemy: User, Tarefa e Categoria
+|-- app.py                  # Aplicacao Flask principal e inicializacao do app
+|-- models.py               # Modelos SQLAlchemy: Tenant, User, Categoria, Tarefa, Etapa e HistoricoEtapa
+|-- local_migrations.py     # Migracoes locais idempotentes para SQLite
 |-- notificacoes.py         # Envio e montagem de notificacoes por e-mail e WhatsApp
 |-- requirements.txt        # Dependencias Python
-|-- versao.py               # Registro simples de versao/observacao
 |-- .env                    # Variaveis de ambiente locais
 |-- instance/               # Banco SQLite local gerado pela aplicacao
+|-- routes/                 # Rotas de autenticacao e rotas principais
 |-- templates/              # Templates HTML da interface
-|-- static/                 # Arquivos estaticos
-|-- docs/                   # Documentacao, guias e scripts auxiliares
+|-- ai-context/             # Contexto tecnico e roadmap do projeto
+|-- tests_e2e_crud.py       # Testes locais do fluxo funcional da V5
+|-- tests_e2e_security.py   # Testes locais de seguranca/IDOR da V5
+|-- tests_e2e_visual.py     # Testes locais de servidor HTTP e HTML renderizado da V5
 ```
 
 ## Modelos principais
+
+### Tenant
+
+Representa o escopo logico de isolamento dos dados.
 
 ### User
 
@@ -61,6 +69,14 @@ Representa o usuario do sistema. Armazena credenciais, configuracoes de notifica
 ### Tarefa
 
 Representa uma tarefa pessoal. Inclui descricao, comentario, datas, horarios, prioridade, recorrencia, categoria, status e ate duas datas de notificacao por tarefa.
+
+### Etapa
+
+Representa uma acao necessaria para executar uma tarefa. Cada etapa possui titulo, descricao, ordem, data planejada, horario, status proprio e conclusao real.
+
+### HistoricoEtapa
+
+Registra acoes relevantes de uma etapa, como criacao, edicao, inicio, pausa, retomada, conclusao e reordenacao.
 
 ### Categoria
 
@@ -79,6 +95,16 @@ Representa categorias personalizadas por usuario, com nome e cor associada para 
 - `/duplicar_tarefa/<id>` - duplicacao de tarefa.
 - `/deletar_tarefa/<id>` - exclusao de tarefa.
 - `/marcar_concluida/<id>` - conclusao de tarefa.
+- `/tarefas/<id>/etapas` - listagem de etapas da tarefa.
+- `/tarefas/<id>/etapas/nova` - criacao de etapa.
+- `/etapas/<id>/editar` - edicao de etapa.
+- `/etapas/<id>/iniciar` - iniciar etapa.
+- `/etapas/<id>/pausar` - pausar etapa.
+- `/etapas/<id>/retomar` - retomar etapa.
+- `/etapas/<id>/concluir` - concluir etapa.
+- `/etapas/<id>/deletar` - exclusao de etapa.
+- `/etapas/<id>/historico` - historico da etapa.
+- `/tarefas/<id>/etapas/reordenar` - reordenacao de etapas.
 - `/categorias` - listagem de categorias.
 - `/cadastro_categoria` - criacao de categoria.
 - `/editar_categoria/<id>` - edicao de categoria.
@@ -92,8 +118,8 @@ Representa categorias personalizadas por usuario, com nome e cor associada para 
 1. Crie e ative um ambiente virtual Python.
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 2. Instale as dependencias.
@@ -109,6 +135,7 @@ Exemplo minimo:
 ```env
 SECRET_KEY=sua-chave-secreta-local
 SESSION_COOKIE_SECURE=False
+APP_ENV=Desenvolvimento
 ```
 
 4. Execute a aplicacao.
@@ -117,13 +144,25 @@ SESSION_COOKIE_SECURE=False
 python app.py
 ```
 
-Por padrao, a aplicacao usa SQLite em `instance/tarefas.db`.
+Com `APP_ENV=Desenvolvimento`, a aplicacao usa SQLite em `instance/tarefas-desenvolvimento.db`. Sem esse valor, usa `instance/tarefas.db`.
 
 ## Banco de dados
 
 O banco e criado com SQLAlchemy a partir dos modelos definidos em `models.py`. A aplicacao usa SQLite localmente e cria as tabelas necessarias na inicializacao quando aplicavel.
 
 O arquivo de banco fica dentro de `instance/` e nao deve ser tratado como codigo-fonte.
+
+Antes de mudancas estruturais, crie backup do banco em `instance/`. A V5 usa migracao local idempotente em `local_migrations.py` para criar `etapa` e `historico_etapa`.
+
+## Validacao local
+
+Execute os testes locais com a `.venv` do projeto:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual
+```
+
+Os testes usam apps Flask de teste e bancos SQLite temporarios; nao devem alterar `instance\tarefas-desenvolvimento.db`.
 
 ## Notificacoes
 
@@ -136,14 +175,13 @@ As notificacoes sao verificadas durante requisicoes autenticadas. Cada tarefa po
 
 ## Documentacao complementar
 
-A pasta `docs/` contem historico tecnico, guias de atualizacao, scripts de migracao, contexto do projeto e registros de funcionalidades. Ela deve ser consultada antes de alteracoes estruturais no sistema.
+A pasta `ai-context/` contem contexto tecnico, roadmap do projeto e registros de funcionalidades. Ela deve ser consultada antes de alteracoes estruturais no sistema.
 
 Arquivos uteis:
 
-- `docs/CONTEXTO_PROJETO01.md`
-- `docs/mapa_projetoV4.md`
-- `docs/RESUMO_NOTIFICACOES.md`
-- `docs/GUIA_ATUALIZACAO_V4.md`
+- `ai-context/local/context.md`
+- `ai-context/mapa_projetoV5.md`
+- `ai-context/mapa_projetoV4.md`
 
 ## Observacoes de manutencao
 
@@ -152,3 +190,4 @@ Arquivos uteis:
 - Formularios usam protecao CSRF via Flask-WTF.
 - As configuracoes sensiveis devem ficar em `.env`, nunca hardcoded no codigo.
 - Antes de mudar regras de notificacao, validar tambem `notificacoes.py` e os campos correspondentes em `models.py`.
+- Rotas de etapa devem sempre validar `tenant_id`, `user_id` e a tarefa dona para evitar IDOR.

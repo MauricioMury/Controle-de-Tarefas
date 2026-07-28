@@ -2,6 +2,34 @@
 
 {% block title %}Lista de Tarefas - Controle de Tarefas{% endblock %}
 
+{% block extra_css %}
+<style>
+    .task-progress-cell {
+        min-width: 130px;
+    }
+
+    .task-progress-meta {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+
+    .task-progress-bar {
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        border-radius: 999px;
+        height: 8px;
+        overflow: hidden;
+        width: 100%;
+    }
+
+    .task-progress-fill {
+        background: var(--accent);
+        height: 100%;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card shadow">
     <div class="card-header bg-primary text-white">
@@ -134,6 +162,7 @@
                         <th>Prioridade</th>
                         <th>Categoria</th>
                         <th>Status</th>
+                        <th>Etapas</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
@@ -170,6 +199,19 @@
                             <span class="badge bg-warning text-dark">Pendente</span>
                             {% endif %}
                         </td>
+                        <td class="task-progress-cell">
+                            {% set progresso = progressos_por_tarefa.get(tarefa.id, {'total': 0, 'concluidas': 0, 'progresso': 0}) %}
+                            {% if progresso.total > 0 %}
+                            <div class="task-progress-meta mb-1">
+                                {{ progresso.concluidas }} de {{ progresso.total }} etapas
+                            </div>
+                            <div class="task-progress-bar" title="{{ progresso.progresso }}% concluído">
+                                <div class="task-progress-fill" style="width: {{ progresso.progresso }}%"></div>
+                            </div>
+                            {% else %}
+                            <span class="badge bg-secondary">Sem etapas</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <div class="task-actions" role="group" aria-label="Ações da tarefa">
                                 {% if tarefa.status == 'Pendente' %}
@@ -189,6 +231,10 @@
                                     title="Editar">
                                     <i class="bi bi-pencil"></i>
                                 </a>
+                                <a href="{{ url_for('listar_etapas_tarefa', id=tarefa.id) }}" class="btn btn-secondary btn-sm"
+                                    title="Etapas">
+                                    <i class="bi bi-diagram-3"></i>
+                                </a>
                                 <form method="POST" action="{{ url_for('deletar_tarefa', id=tarefa.id) }}"
                                     style="display: inline;"
                                     onsubmit="return confirm('Tem certeza que deseja deletar esta tarefa?');">
@@ -203,7 +249,7 @@
                     {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">
+                        <td colspan="8" class="text-center text-muted py-4">
                             <i class="bi bi-inbox" style="font-size: 2rem;"></i>
                             <p>Nenhuma tarefa encontrada</p>
                         </td>

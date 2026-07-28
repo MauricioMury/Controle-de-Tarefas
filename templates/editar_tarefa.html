@@ -2,6 +2,58 @@
 
 {% block title %}Editar Tarefa - Controle de Tarefas{% endblock %}
 
+{% block extra_css %}
+<style>
+    .edit-task-steps {
+        background: var(--bg-input);
+        border: 1px solid rgba(124, 92, 255, 0.45);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 1rem;
+        padding: 0.85rem 1rem;
+    }
+    .edit-task-steps-info {
+        min-width: 0;
+    }
+    .edit-task-steps-title {
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        font-weight: 800;
+        margin-bottom: 0.35rem;
+    }
+    .edit-task-steps-meta {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-bottom: 0.45rem;
+    }
+    .edit-task-steps-bar {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 999px;
+        height: 8px;
+        overflow: hidden;
+        width: min(220px, 100%);
+    }
+    .edit-task-steps-fill {
+        background: var(--accent);
+        height: 100%;
+    }
+    @media (max-width: 576px) {
+        .edit-task-steps {
+            align-items: stretch;
+            flex-direction: column;
+        }
+        .edit-task-steps .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8 col-lg-6">
@@ -10,6 +62,22 @@
                 <h4 class="mb-0"><i class="bi bi-pencil"></i> Editar Tarefa</h4>
             </div>
             <div class="card-body">
+                <div class="edit-task-steps">
+                    <div class="edit-task-steps-info">
+                        <div class="edit-task-steps-title">
+                            <i class="bi bi-diagram-3"></i> Etapas da tarefa
+                        </div>
+                        <div class="edit-task-steps-meta">
+                            {{ progresso.concluidas }} de {{ progresso.total }} etapas
+                        </div>
+                        <div class="edit-task-steps-bar" title="{{ progresso.progresso }}% concluído">
+                            <div class="edit-task-steps-fill" style="width: {{ progresso.progresso }}%"></div>
+                        </div>
+                    </div>
+                    <a href="{{ url_for('listar_etapas_tarefa', id=tarefa.id) }}" class="btn btn-secondary btn-sm">
+                        <i class="bi bi-diagram-3"></i> Abrir etapas
+                    </a>
+                </div>
                 <form method="POST" action="{{ url_for('editar_tarefa', id=tarefa.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">

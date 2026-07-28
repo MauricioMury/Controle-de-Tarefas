@@ -17,6 +17,8 @@ class Tenant(db.Model):
     usuarios = db.relationship('User', backref='tenant', lazy=True)
     tarefas = db.relationship('Tarefa', backref='tenant', lazy=True)
     categorias = db.relationship('Categoria', backref='tenant', lazy=True)
+    etapas = db.relationship('Etapa', backref='tenant', lazy=True)
+    historicos_etapa = db.relationship('HistoricoEtapa', backref='tenant', lazy=True)
 
     def __repr__(self):
         return f'<Tenant {self.slug}>'
@@ -38,6 +40,8 @@ class User(UserMixin, db.Model):
 
     tarefas = db.relationship('Tarefa', backref='usuario', lazy=True, cascade='all, delete-orphan')
     categorias = db.relationship('Categoria', backref='usuario', lazy=True, cascade='all, delete-orphan')
+    etapas = db.relationship('Etapa', backref='usuario', lazy=True, cascade='all, delete-orphan')
+    historicos_etapa = db.relationship('HistoricoEtapa', backref='usuario', lazy=True, cascade='all, delete-orphan')
 
 
 class Categoria(db.Model):
@@ -72,6 +76,14 @@ class Tarefa(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     categoria = db.relationship('Categoria', backref=db.backref('tarefas', lazy=True))
+    etapas = db.relationship(
+        'Etapa',
+        backref='tarefa_ref',
+        lazy=True,
+        cascade='all, delete-orphan',
+        order_by='Etapa.ordem',
+    )
+    historicos_etapa = db.relationship('HistoricoEtapa', backref='tarefa_ref', lazy=True)
 
     notif_datetime_1 = db.Column(db.DateTime, nullable=True)
     notif_email_enviada_1 = db.Column(db.Boolean, default=False, nullable=False)
@@ -114,3 +126,61 @@ class Tarefa(db.Model):
 
     def __repr__(self):
         return f'<Tarefa {self.tarefa}>'
+
+
+class Etapa(db.Model):
+    """Etapa de execucao vinculada a uma tarefa."""
+    __table_args__ = (
+        db.UniqueConstraint('tarefa_id', 'ordem', name='uq_etapa_tarefa_ordem'),
+        db.CheckConstraint(
+            "status IN ('Criada', 'Iniciada', 'Pausada', 'Concluida')",
+            name='ck_etapa_status',
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tarefa_id = db.Column(db.Integer, db.ForeignKey('tarefa.id'), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    titulo = db.Column(db.String(200), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    ordem = db.Column(db.Integer, nullable=False)
+    data_planejada = db.Column(db.Date, nullable=True)
+    hora_inicio = db.Column(db.Time, nullable=True)
+    hora_fim = db.Column(db.Time, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='Criada')
+    concluida_em = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    historicos = db.relationship(
+        'HistoricoEtapa',
+        backref='etapa_ref',
+        lazy=True,
+        cascade='all, delete-orphan',
+    )
+
+    def __repr__(self):
+        return f'<Etapa {self.titulo}>'
+
+
+class HistoricoEtapa(db.Model):
+    """Historico de acoes realizadas em uma etapa."""
+    __table_args__ = (
+        db.CheckConstraint(
+            "acao IN ('criar', 'editar', 'iniciar', 'pausar', 'retomar', 'concluir', 'excluir', 'reordenar')",
+            name='ck_historico_etapa_acao',
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tarefa_id = db.Column(db.Integer, db.ForeignKey('tarefa.id'), nullable=False, index=True)
+    etapa_id = db.Column(db.Integer, db.ForeignKey('etapa.id'), nullable=False, index=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    acao = db.Column(db.String(50), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<HistoricoEtapa {self.acao}>'

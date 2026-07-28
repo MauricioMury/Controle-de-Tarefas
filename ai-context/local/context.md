@@ -438,15 +438,15 @@ Legenda:
 | [CONCLUIDO] MVP-3 - Retirar rotas do `app.py` e mover para `routes.py` | [CONCLUIDO] com ressalva | Rotas principais em `routes/routes.py` e autenticação/perfil em `routes/auth.py`. | Manter monitoramento para não voltar regra de negócio para `app.py`. |
 | [CONCLUIDO] MVP-4 - Separar lógica de negócio sem overengineering | [CONCLUIDO] | Helpers de parsing, categoria e montagem/aplicação de tarefa concentraram validações reutilizadas em `routes/routes.py`. | Evitar nova camada service/repository até haver repetição real maior. |
 | [CONCLUIDO] MVP-5 - Validar fluxo principal do usuário | [CONCLUIDO] | Fluxo validado com Flask test client: login, telas principais, categoria, tarefa, filtro, edição, calendário, duplicação, movimentação, conclusão, entrada rápida e exclusão. | Manter validação manual visual como apoio no MVP-7. |
-| [PENDENTE] MVP-6 - Testes locais mínimos | [PENDENTE] | Não há testes locais mínimos identificados no projeto. | Criar testes para integridade do banco, `categoria_id`, bloqueio de exclusão de categoria em uso e renderização das rotas principais. |
+| [CONCLUIDO] MVP-6 - Testes locais mínimos | [CONCLUIDO] com ressalva | Existem testes locais em `tests_e2e_crud.py`, `tests_e2e_security.py` e `tests_e2e_visual.py`; em 21/07/2026 a suíte `.\.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual` passou com 11 testes. | Manter cobertura local antes de novas refatorações estruturais e complementar com conferência visual manual quando o navegador estiver disponível. |
 | [CONCLUIDO] MVP-7 - Ajustes visuais e usabilidade | [CONCLUIDO] com ressalva | Ajustados espaçamentos mobile, botões de formulário, ações de tabela, largura mínima de tabelas, contraste de badge claro e painéis internos sem card dentro de card. Rotas principais renderizadas com sucesso. | Fazer conferência visual manual em `http://127.0.0.1:5050` quando o servidor local estiver aberto. |
 | [PARCIAL] Etapa 1 - Cadastros, Listagens, Dashboard e Calendário | [PARCIAL] | Templates e rotas existem para cadastros, listagens, dashboard inicial e calendário. | Validar dados reais vindos do SQLite e corrigir divergências de categoria/status. |
 | [CONCLUIDO] Etapa 2 - Remover segredos hardcoded | [CONCLUIDO] | `SECRET_KEY` lê `.env` ou ambiente e não possui fallback dinâmico no código. | Criar `.env` local antes de iniciar a aplicação em ambiente novo. |
 | [CONCLUIDO] Etapa 3 - Modularizar backend sem mudar comportamento | [CONCLUIDO] com ressalva | `app.py`, `models.py`, `routes/routes.py` e `routes/auth.py` separados. | Não expandir arquitetura antes de estabilizar testes e fluxo principal. |
 | [PARCIAL] Etapa 4 - Organizar acesso ao banco | [PARCIAL] | O projeto usa SQLAlchemy ORM nos fluxos principais. | Confirmar se ainda existe SQL manual relevante em scripts auxiliares e se ele é apenas migração local controlada. |
 | [PARCIAL] Etapa 5 - Melhorar dashboard | [PARCIAL] | Dashboard inicial existe e lista de tarefas tem paginação/filtros. | Confirmar se ainda faz sentido criar `/api/dashboard/summary` no MVP Flask atual. |
-| [PENDENTE] Etapa 6 - Criar testes locais mínimos | [PENDENTE] | Não há suíte de testes local identificada. | Criar testes mínimos antes de novas refatorações estruturais. |
-| [PARCIAL] Etapa 7 - Atualizar documentação e roadmap | [PARCIAL] | `context.md` recebeu índice e status da correção de rumo. | Corrigir inconsistências antigas do documento, especialmente trechos herdados de PostgreSQL, FastAPI, React e password manager. |
+| [CONCLUIDO] Etapa 6 - Criar testes locais mínimos | [CONCLUIDO] com ressalva | Suíte local da V5 cobre fluxo funcional, segurança/IDOR e renderização HTTP/HTML com bancos SQLite temporários; em 21/07/2026 passou com 11 testes. | Manter os testes usando banco temporário e ampliar cobertura conforme novas funcionalidades forem abertas. |
+| [PARCIAL] Etapa 7 - Atualizar documentação e roadmap | [PARCIAL] | Documentação da V5 alinhada em `README.md` e `ai-context/mapa_projetoV5.md`; `context.md` recebeu índice e status da correção de rumo. | Corrigir inconsistências históricas ainda presentes no contexto geral, especialmente trechos herdados de PostgreSQL, FastAPI, React e password manager. |
 | [PARCIAL] Etapa 8 - Preparar para publicação futura sem implementar agora | [PARCIAL] | Headers de segurança, CSRF e separação básica já existem. | Manter como requisito futuro sem bloquear o MVP local; evitar novas dependências agora. |
 
 ### Direção Técnica Atual
@@ -559,13 +559,13 @@ Roadmap técnico para rodar como MVP local:
 - Criar tarefa pela entrada rápida.
 - Concluir, duplicar, mover e excluir tarefa.
 
-### MVP-6 - Testes locais mínimos [PENDENTE]
+### MVP-6 - Testes locais mínimos [CONCLUIDO] com ressalva
 
-- Criar teste de integridade do banco: contagem de tarefas e join com categorias.
-- Criar teste de criação de tarefa com `categoria_id`.
-- Criar teste de bloqueio de exclusão de categoria em uso.
-- Criar teste de renderização das principais rotas com usuário local autenticado ou contexto controlado.
-- Não transformar isso em CI/CD agora.
+- `tests_e2e_crud.py` cobre o fluxo funcional da V5 com criação, edição, transições de status, histórico, progresso, duplicação com etapas e reordenação.
+- `tests_e2e_security.py` cobre segurança/IDOR para impedir acesso cruzado a etapas, histórico, reordenação e calendário.
+- `tests_e2e_visual.py` cobre servidor HTTP local de teste, login, HTML renderizado das telas principais de etapas e JSON de etapas.
+- Em 21/07/2026, a suíte `.\.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual` passou com 11 testes.
+- Ressalva: manter conferência visual manual quando o navegador local estiver disponível; os testes atuais validam servidor/HTML, não screenshot manual.
 
 ### MVP-7 - Ajustes visuais e usabilidade [CONCLUIDO]
 
