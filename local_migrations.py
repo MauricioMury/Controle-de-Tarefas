@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import re
 import sqlite3
@@ -152,6 +152,56 @@ def _tornar_hora_inicio_opcional(con):
         cur.execute('PRAGMA foreign_keys=ON')
 
 
+# Colunas de valor fixo da tarefa em que ja apareceu UTF-8 gravado duas vezes (ex.: "Conclu\u00c3\xadda").
+_COLUNAS_VALOR_FIXO_TAREFA = ('status', 'prioridade', 'recorrencia', 'categoria')
+_STATUS_TAREFA = ('Pendente', 'Concluída')
+
+
+def _desfazer_utf8_duplo(valor):
+    """Desfaz UTF-8 lido como Latin-1 e gravado de novo. Devolve None quando nao ha o que corrigir.
+
+    So mexe em texto com "\u00c3"/"\u00c2" que volta a ser UTF-8 valido; texto legitimo como "S\u00c3O" nao muda.
+    """
+    if not isinstance(valor, str):
+        return None
+    corrigido = valor
+    for _ in range(3):  # aceita o defeito repetido ate 3 vezes
+        if '\u00c3' not in corrigido and '\u00c2' not in corrigido:
+            break
+        try:
+            corrigido = corrigido.encode('latin-1').decode('utf-8')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+    return corrigido if corrigido != valor else None
+
+
+def _corrigir_textos_corrompidos(con):
+    """V5.1 (Etapa 5): corrige acentuacao corrompida nas colunas de valor fixo da tarefa. Idempotente."""
+    cur = con.cursor()
+    if not _table_exists(cur, 'tarefa'):
+        return
+    existentes = _column_names(cur, 'tarefa')
+    for coluna in (c for c in _COLUNAS_VALOR_FIXO_TAREFA if c in existentes):
+        linhas = cur.execute(
+            f"SELECT id, {coluna} FROM tarefa WHERE {coluna} LIKE '%\u00c3%' OR {coluna} LIKE '%\u00c2%'"
+        ).fetchall()
+        for tarefa_id, valor in linhas:
+            corrigido = _desfazer_utf8_duplo(valor)
+            if corrigido is not None:
+                cur.execute(f'UPDATE tarefa SET {coluna} = ? WHERE id = ?', (corrigido, tarefa_id))
+
+    if 'status' in existentes and 'data_realizado' in existentes:
+        cur.execute(
+            """
+            UPDATE tarefa
+               SET status = CASE WHEN data_realizado IS NOT NULL THEN ? ELSE ? END
+             WHERE status IS NULL OR status NOT IN (?, ?)
+            """,
+            (_STATUS_TAREFA[1], _STATUS_TAREFA[0], *_STATUS_TAREFA),
+        )
+    con.commit()
+
+
 def run_local_migrations(db_path):
     """Executa migracoes locais idempotentes para o MVP SQLite."""
     if not os.path.exists(db_path):
@@ -191,7 +241,7 @@ def run_local_migrations(db_path):
             _ensure_column(cur, 'tarefa', 'data_inicio', 'DATE')
 
         users = cur.execute('SELECT id, username, password, tenant_id FROM user').fetchall() if _table_exists(cur, 'user') else []
-        now = datetime.utcnow().isoformat(sep=' ', timespec='seconds')
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(sep=' ', timespec='seconds')
 
         if users:
             for user_id, username, password, tenant_id in users:
@@ -242,5 +292,8 @@ def run_local_migrations(db_path):
 
         # V5.1: a hora de inicio pertence a data de inicio e passa a ser opcional.
         _tornar_hora_inicio_opcional(con)
+
+        # V5.1 (Etapa 5): status e recorrencia com acentuacao corrompida.
+        _corrigir_textos_corrompidos(con)
     finally:
         con.close()

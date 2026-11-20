@@ -41,7 +41,7 @@ Status permitidos: `PENDENTE`, `ANDAMENTO`, `CONCLUÍDO`.
 | 2 | Navegação entre telas | Voltar à tela de origem após salvar e manter os filtros do Calendário | CONCLUÍDO | 5.0.2 |
 | 3 | Datas da tarefa | "Criada em", data de início, atraso e seletor "Ver por: Meta / Início / Criação" no Calendário | CONCLUÍDO | 5.1.0 |
 | 4 | Notificações | Religar o cadastro de lembretes na tarefa e o disparo por e-mail e WhatsApp | PENDENTE | 5.2.0 (prevista) |
-| 5 | Qualidade e dados | Corrigir status com acentuação corrompida e o `DeprecationWarning` de `datetime.utcnow()` | PENDENTE | 5.2.1 (prevista) |
+| 5 | Qualidade e dados | Corrigir status com acentuação corrompida, o `DeprecationWarning` de `datetime.utcnow()` e a hora das etapas em UTC | CONCLUÍDO | 5.1.1 |
 
 ## Decisões vigentes
 
@@ -137,20 +137,7 @@ CONCLUÍDO em 2026-11-20 10:41 (versão 5.1.0). Evidências em `roadmap-historic
 
 ## Etapa 5 — Qualidade e dados
 
-- Status: PENDENTE
-
-### Tarefa 5.1 — Status com acentuação corrompida
-
-- Status: PENDENTE
-- Ordem (Mauricio, 2026-11-20): fazer logo depois da Etapa 3, antes da Etapa 4. Encontrada de novo em 2026-11-20: o filtro Concluída mostra 429 de 430 concluídas (477 tarefas = 429 + 47 pendentes + 1 corrompida).
-- Contexto: no banco de produção há 1 tarefa com o status `Concluída` gravado com codificação corrompida (427 corretas, 47 Pendente). Ela não aparece no filtro "Concluída".
-- Escopo: migração idempotente em `local_migrations.py` normalizando o status; aplicar em produção com backup antes.
-
-### Tarefa 5.2 — `datetime.utcnow()` obsoleto
-
-- Status: PENDENTE
-- Escopo: trocar por datas com fuso (`datetime.now(timezone.utc)`), mantendo o formato gravado no SQLite.
-- Testes: suíte sem `DeprecationWarning`.
+CONCLUÍDO em 2026-11-20 10:56 (versão 5.1.1). Evidências em `roadmap-historico.md`.
 
 ---
 

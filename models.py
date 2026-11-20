@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -7,12 +7,21 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
+def agora_utc():
+    """Instante atual em UTC sem fuso, no mesmo formato ja gravado no SQLite.
+
+    Substitui agora_utc(), obsoleto desde o Python 3.12. As datas lidas do banco tambem vem sem fuso,
+    entao as comparacoes (ex.: locked_until) continuam validas. Para exibir, use para_sao_paulo().
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class Tenant(db.Model):
     """Tenant do sistema multi-tenant."""
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False)
     slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
 
     usuarios = db.relationship('User', backref='tenant', lazy=True)
     tarefas = db.relationship('Tarefa', backref='tenant', lazy=True)
@@ -32,7 +41,7 @@ class User(UserMixin, db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False, index=True)
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
 
     email_notif = db.Column(db.String(120), nullable=True)
     whatsapp_numero = db.Column(db.String(30), nullable=True)
@@ -51,7 +60,7 @@ class Categoria(db.Model):
     cor = db.Column(db.String(20), default='info')
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
 
     def __repr__(self):
         return f'<Categoria {self.nome}>'
@@ -76,7 +85,7 @@ class Tarefa(db.Model):
     status = db.Column(db.String(20), default='Pendente')
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
 
     categoria = db.relationship('Categoria', backref=db.backref('tarefas', lazy=True))
     etapas = db.relationship(
@@ -166,8 +175,8 @@ class Etapa(db.Model):
     hora_fim = db.Column(db.Time, nullable=True)
     status = db.Column(db.String(20), nullable=False, default='Criada')
     concluida_em = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
+    updated_at = db.Column(db.DateTime, default=agora_utc, onupdate=agora_utc)
 
     historicos = db.relationship(
         'HistoricoEtapa',
@@ -196,7 +205,7 @@ class HistoricoEtapa(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     acao = db.Column(db.String(50), nullable=False)
     descricao = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=agora_utc)
 
     def __repr__(self):
         return f'<HistoricoEtapa {self.acao}>'

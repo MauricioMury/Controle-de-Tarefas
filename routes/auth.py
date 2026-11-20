@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import re
 
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from models import Tenant, User, db
+from models import Tenant, User, agora_utc, db
 
 
 MAX_LOGIN_ATTEMPTS = 10
@@ -42,7 +42,7 @@ def _validar_senha(password):
 
 
 def _user_bloqueado(user):
-    return user.locked_until and user.locked_until > datetime.utcnow()
+    return user.locked_until and user.locked_until > agora_utc()
 
 
 def _next_url_segura():
@@ -68,14 +68,14 @@ def register_auth_routes(app, criar_categorias_padrao):
                 return render_template('login.html')
 
             if _user_bloqueado(user):
-                minutos = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() // 60) + 1)
+                minutos = max(1, int((user.locked_until - agora_utc()).total_seconds() // 60) + 1)
                 flash(f'Conta bloqueada temporariamente. Tente novamente em {minutos} minuto(s).', 'danger')
                 return render_template('login.html')
 
             if not check_password_hash(user.password, password):
                 user.failed_login_attempts += 1
                 if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
-                    user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+                    user.locked_until = agora_utc() + timedelta(minutes=LOCKOUT_MINUTES)
                     flash('Conta bloqueada após 10 tentativas inválidas. Tente novamente em 20 minutos.', 'danger')
                 else:
                     restantes = MAX_LOGIN_ATTEMPTS - user.failed_login_attempts

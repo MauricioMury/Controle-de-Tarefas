@@ -6,7 +6,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import case, func
 from sqlalchemy.orm import contains_eager
 
-from models import Categoria, Etapa, HistoricoEtapa, Tarefa, db
+from models import Categoria, Etapa, HistoricoEtapa, Tarefa, agora_utc, db
 
 
 STATUS_ETAPA_CRIADA = 'Criada'
@@ -331,7 +331,7 @@ def criar_etapa(tarefa, dados):
         hora_inicio=hora_inicio,
         hora_fim=hora_fim,
         status=status,
-        concluida_em=datetime.utcnow() if status == STATUS_ETAPA_CONCLUIDA else None,
+        concluida_em=agora_utc() if status == STATUS_ETAPA_CONCLUIDA else None,
     )
     db.session.add(etapa)
     db.session.flush()
@@ -371,7 +371,7 @@ def aplicar_dados_etapa(etapa, dados):
     etapa.data_planejada = dados.get('data_planejada')
     etapa.hora_inicio = hora_inicio
     etapa.hora_fim = hora_fim
-    etapa.updated_at = datetime.utcnow()
+    etapa.updated_at = agora_utc()
     registrar_historico_etapa(etapa, 'editar', 'Etapa editada.')
     return etapa
 
@@ -385,14 +385,14 @@ def alterar_status_etapa(etapa, novo_status, descricao=None):
         raise ValueError(f'Transição de status inválida: {status_atual} -> {novo_status}.')
 
     etapa.status = novo_status
-    etapa.updated_at = datetime.utcnow()
+    etapa.updated_at = agora_utc()
+    # Horas da etapa no horario de Sao Paulo; concluida_em continua em UTC, como as outras datas internas.
     if novo_status == STATUS_ETAPA_INICIADA and not etapa.hora_inicio:
-        etapa.hora_inicio = datetime.utcnow().time().replace(microsecond=0)
+        etapa.hora_inicio = datetime.now(FUSO_SAO_PAULO).time().replace(microsecond=0, tzinfo=None)
     if novo_status == STATUS_ETAPA_CONCLUIDA:
-        agora = datetime.utcnow()
-        etapa.concluida_em = agora
+        etapa.concluida_em = agora_utc()
         if not etapa.hora_fim:
-            etapa.hora_fim = agora.time().replace(microsecond=0)
+            etapa.hora_fim = datetime.now(FUSO_SAO_PAULO).time().replace(microsecond=0, tzinfo=None)
 
     acao_por_status = {
         STATUS_ETAPA_INICIADA: 'iniciar' if status_atual == STATUS_ETAPA_CRIADA else 'retomar',
@@ -432,7 +432,7 @@ def reordenar_etapas(tarefa, etapas_ordenadas):
     for etapa_id, ordem in etapas_ordenadas:
         etapa = etapas_por_id[etapa_id]
         etapa.ordem = ordem
-        etapa.updated_at = datetime.utcnow()
+        etapa.updated_at = agora_utc()
         registrar_historico_etapa(etapa, 'reordenar', f'Ordem alterada para {ordem}.')
 
     return list(etapas_por_id.values())

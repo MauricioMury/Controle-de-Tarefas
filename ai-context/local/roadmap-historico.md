@@ -180,3 +180,44 @@ Versões anteriores a este roadmap (V4 e V5) estão documentadas em `ai-context/
 - Teste visual aprovado por Mauricio em 2026-11-20: (1) Ver por Meta = comportamento atual; (2) Ver por Início: tarefas com início no dia de início, sem início no dia da meta com o selo; arrastar muda o início, e arrastar para depois da meta é recusado com aviso; (3) Ver por Criação: tarefas no dia em que foram criadas, sem arrastar; (4) escolher Início ou Criação, editar uma tarefa e salvar → volta no mesmo modo; F5 mantém o modo.
 
 ---
+
+## Etapa 5 — Qualidade e dados
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 10:46
+- Término: 2026-11-20 10:56 (fechamento e commit autorizados por Mauricio)
+- Versão: 5.1.1
+
+### Tarefa 5.1 — Status com acentuação corrompida
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 10:46 · Término: 2026-11-20 10:48 · Duração: 2 min
+- Ordem (Mauricio, 2026-11-20): fazer logo depois da Etapa 3, antes da Etapa 4. Encontrada de novo em 2026-11-20: o filtro Concluída mostra 429 de 430 concluídas (477 tarefas = 429 + 47 pendentes + 1 corrompida).
+- Contexto: no banco de produção há 1 tarefa com o status `Concluída` gravado com codificação corrompida (427 corretas, 47 Pendente). Ela não aparece no filtro "Concluída".
+- Escopo: migração idempotente em `local_migrations.py` normalizando o status; aplicar em produção com backup antes.
+- Diagnóstico (2026-11-20, banco de desenvolvimento: 478 tarefas = 431 concluídas + 46 pendentes + 1): a tarefa 372 ("Testando cadastro tarefa", Mauricio) tem o status `ConcluÃ\xadda` e também a recorrência `DIÃ\x81RIO`: UTF-8 gravado duas vezes (lido como Latin-1 e gravado de novo). Nenhum outro campo de texto da tarefa nem nome de categoria tem o defeito.
+- Decisão de implementação: corrigir as colunas de valor fixo da tarefa (`status`, `prioridade`, `recorrencia`, `categoria`), só quando o valor tem `Ã`/`Â` e volta a ser UTF-8 válido (texto legítimo como "SÃO" não muda). Status que continue fora de Pendente/Concluída é recalculado pela data realizado.
+- Backup do banco de desenvolvimento antes da migração: `instance/Backups/tarefas-desenvolvimento-backup-pre-5-1-status-20261120-1046.db`.
+- Resultado: `local_migrations.py`: `_desfazer_utf8_duplo()` (desfaz o defeito até 3 vezes repetido; devolve `None` se não houver o que corrigir) e `_corrigir_textos_corrompidos()`, chamada no fim de `run_local_migrations`. Aplicada no banco de desenvolvimento pelo reload do servidor: 432 concluídas + 46 pendentes = 478; tarefa 372 com `Concluída` e `DIÁRIO`; `integrity_check` ok.
+- Testes: `MigracaoTextoCorrompidoTestCase` em `tests_e2e_crud.py` (4 testes): desfazer o defeito simples e duplo, valores intactos (inclusive "SÃO PAULO"); migração corrige status e recorrência e é idempotente; status inválido recalculado pela data realizado (e vazio → Pendente); "SÃO JOÃO" não muda. Contra o código antigo: 2 falhas e 1 erro. Suíte `tests_e2e_crud tests_e2e_security` → 70 testes OK (2026-11-20 10:47).
+- Teste visual (resultado não informado; fechamento e commit autorizados por Mauricio em 2026-11-20): Minhas Tarefas, filtro Concluída → 432 tarefas (antes 431 de 432), incluindo "Testando cadastro tarefa" (11/07/2026); editar essa tarefa → recorrência DIÁRIO selecionada.
+
+### Tarefa 5.2 — `datetime.utcnow()` obsoleto
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 10:49 · Término: 2026-11-20 10:52 · Duração: 3 min (sem mudança visível; fechamento e commit autorizados por Mauricio)
+- Escopo: trocar por datas com fuso (`datetime.now(timezone.utc)`), mantendo o formato gravado no SQLite.
+- Testes: suíte sem `DeprecationWarning`.
+- Resultado: `models.py`: `agora_utc()` (UTC sem fuso, mesmo formato gravado no SQLite, comparável com as datas lidas do banco), usada nos `default`/`onupdate` dos modelos; `routes/routes.py` (etapas) e `routes/auth.py` (bloqueio de login) usam `agora_utc()`; `local_migrations.py` usa `datetime.now(timezone.utc)` sem fuso (não importa o modelo). Sem mudança de comportamento.
+- Testes: `AgoraUtcTestCase` em `tests_e2e_crud.py` (2 testes): `agora_utc()` sem fuso e em UTC; nenhum `utcnow` no código do app. Suíte `tests_e2e_crud tests_e2e_security` com `-W error::DeprecationWarning` → 72 testes OK (2026-11-20 10:52). Servidor de desenvolvimento recarregado sem erro (`/login` 200).
+- Achado: ao iniciar ou concluir uma etapa, `alterar_status_etapa` grava a hora de início e a hora de fim da etapa em UTC (3 h à frente de São Paulo). O mesmo defeito do Concluir da tarefa, corrigido na Tarefa 3.2. Mauricio decidiu corrigir agora (Tarefa 5.3).
+
+### Tarefa 5.3 — Hora de início e fim da etapa em UTC
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 10:53 · Término: 2026-11-20 10:56 · Duração: 3 min (fechamento e commit autorizados por Mauricio)
+- Escopo: ao iniciar e ao concluir uma etapa, preencher a hora de início e a hora de fim vazias com a hora de São Paulo, e não a de UTC. `concluida_em` continua em UTC, como as demais datas internas. As etapas já gravadas não mudam: não há como saber qual hora foi digitada e qual foi automática.
+- Resultado: `routes/routes.py`, `alterar_status_etapa`: `datetime.now(FUSO_SAO_PAULO)` para `hora_inicio` e `hora_fim`.
+- Testes: `HoraEtapaSaoPauloTestCase` em `tests_e2e_crud.py` (2 testes): iniciar às 12:05:30 UTC grava 09:05:30 e concluir às 20:40:10 UTC grava 17:40:10; horas informadas não são sobrescritas. Contra o código antigo: 1 falha. Suíte `tests_e2e_crud tests_e2e_security` com `-W error::DeprecationWarning` → 74 testes OK (2026-11-20 10:55).
+
+---

@@ -21,6 +21,19 @@ Os detalhes de implementação e os testes de cada item ficam em `ai-context/loc
 
 ---
 
+## [5.1.1] — 2026-11-20
+
+### Corrigido
+
+- Tarefa com status e recorrência de acentuação corrompida (ex.: `ConcluÃ\xadda`) não aparecia no filtro "Concluída". Migração automática corrige os valores gravados assim. (Etapa 5)
+- Iniciar e concluir etapa preenchem a hora de início e a hora de fim com a hora de São Paulo; antes, gravavam a hora UTC (3 h à frente). (Etapa 5)
+
+### Alterado
+
+- Datas internas em UTC geradas sem `datetime.utcnow()`, obsoleto no Python 3.12; mesmo formato gravado no banco. (Etapa 5)
+
+---
+
 ## [5.1.0] — 2026-11-20
 
 ### Adicionado

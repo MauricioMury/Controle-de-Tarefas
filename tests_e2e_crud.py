@@ -1174,5 +1174,146 @@ class VerPorCalendarioTestCase(unittest.TestCase):
         self.assertIsNone(self._tarefa().data_inicio)
 
 
+class MigracaoTextoCorrompidoTestCase(unittest.TestCase):
+    """Etapa 5, Tarefa 5.1: status e recorrencia com UTF-8 gravado duas vezes."""
+
+    DDL_TAREFA_ANTIGA = MigracaoDataInicioTestCase.DDL_TAREFA_ANTIGA
+    setUp = MigracaoDataInicioTestCase.setUp
+    tearDown = MigracaoDataInicioTestCase.tearDown
+
+    @staticmethod
+    def _corromper(texto):
+        return texto.encode('utf-8').decode('latin-1')
+
+    def _inserir(self, tarefa_id, status, recorrencia, data_realizado):
+        import sqlite3
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            'INSERT INTO tarefa (id, tarefa, data_meta, data_realizado, hora_inicio, prioridade, recorrencia,'
+            ' categoria, categoria_id, status, user_id)'
+            " VALUES (?, 'Teste', '2026-07-11', ?, '09:00:00.000000', 'Normal', ?, 'Trabalho', 1, ?, 1)",
+            (tarefa_id, data_realizado, recorrencia, status),
+        )
+        con.commit()
+        con.close()
+
+    def _linhas(self):
+        import sqlite3
+        con = sqlite3.connect(self.db_path)
+        try:
+            return {r[0]: r[1:] for r in con.execute('SELECT id, status, recorrencia, prioridade FROM tarefa')}
+        finally:
+            con.close()
+
+    def test_desfazer_utf8_duplo(self):
+        from local_migrations import _desfazer_utf8_duplo
+        self.assertEqual('Concluída', _desfazer_utf8_duplo(self._corromper('Concluída')))
+        self.assertEqual('DIÁRIO', _desfazer_utf8_duplo(self._corromper('DIÁRIO')))
+        self.assertEqual('TERÇA', _desfazer_utf8_duplo(self._corromper(self._corromper('TERÇA'))))
+        for intacto in ('Concluída', 'SÃO PAULO', 'Pendente', '', None):
+            with self.subTest(intacto=intacto):
+                self.assertIsNone(_desfazer_utf8_duplo(intacto))
+
+    def test_migracao_corrige_status_e_recorrencia(self):
+        from local_migrations import run_local_migrations
+        self.assertEqual(b'Conclu\xc3\x83\xc2\xadda', self._corromper('Concluída').encode('utf-8'))
+        self._inserir(372, self._corromper('Concluída'), self._corromper('DIÁRIO'), '2026-07-11')
+        run_local_migrations(self.db_path)
+        linhas = self._linhas()
+        self.assertEqual(('Concluída', 'DIÁRIO', 'Normal'), linhas[372])
+        self.assertEqual(('Concluída', 'Nao', 'Normal'), linhas[7])
+        run_local_migrations(self.db_path)  # idempotente
+        self.assertEqual(linhas, self._linhas())
+
+    def test_status_invalido_e_recalculado_pela_data_realizado(self):
+        from local_migrations import run_local_migrations
+        self._inserir(20, 'xyz', 'SEXTA', '2026-07-11')
+        self._inserir(21, 'xyz', 'SEXTA', None)
+        self._inserir(22, None, 'SEXTA', None)
+        run_local_migrations(self.db_path)
+        linhas = self._linhas()
+        self.assertEqual('Concluída', linhas[20][0])
+        self.assertEqual('Pendente', linhas[21][0])
+        self.assertEqual('Pendente', linhas[22][0])
+
+    def test_texto_legitimo_com_til_nao_muda(self):
+        from local_migrations import run_local_migrations
+        self._inserir(30, 'Pendente', 'SÃO JOÃO', None)
+        run_local_migrations(self.db_path)
+        self.assertEqual('SÃO JOÃO', self._linhas()[30][1])
+
+
+class AgoraUtcTestCase(unittest.TestCase):
+    """Etapa 5, Tarefa 5.2: datetime.utcnow() (obsoleto) trocado por agora_utc()."""
+
+    def test_agora_utc_sem_fuso_e_em_utc(self):
+        from datetime import datetime, timezone
+        from models import agora_utc
+        valor = agora_utc()
+        self.assertIsNone(valor.tzinfo)
+        referencia = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.assertLess(abs((referencia - valor).total_seconds()), 5)
+
+    def test_codigo_do_app_nao_usa_utcnow(self):
+        raiz = Path(__file__).resolve().parent
+        arquivos = ['app.py', 'models.py', 'local_migrations.py', 'notificacoes.py', 'routes/routes.py', 'routes/auth.py']
+        for nome in arquivos:
+            with self.subTest(arquivo=nome):
+                self.assertNotIn('utcnow', (raiz / nome).read_text(encoding='utf-8-sig'))
+
+
+class HoraEtapaSaoPauloTestCase(unittest.TestCase):
+    """Etapa 5, Tarefa 5.3: iniciar e concluir etapa gravam a hora de Sao Paulo, e nao a de UTC."""
+
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+
+    def _criar_etapa_sem_horas(self):
+        response = self.client.post(f'/tarefas/{self.tarefa_id}/etapas/nova', json={
+            'titulo': 'Etapa sem horas', 'data_planejada': '2026-07-20', 'hora_inicio': '', 'hora_fim': '',
+        })
+        self.assertEqual(201, response.status_code)
+        return response.get_json()['etapa']['id']
+
+    def _post_em(self, url, instante_utc):
+        from datetime import datetime as dt
+        from unittest import mock
+        import routes.routes as rotas
+
+        with mock.patch.object(rotas, 'datetime', wraps=dt) as falso:
+            falso.now.side_effect = lambda fuso=None: instante_utc.astimezone(fuso)
+            response = self.client.post(url, json={})
+        self.assertEqual(200, response.status_code)
+
+    def _etapa(self, etapa_id):
+        db.session.expire_all()
+        return db.session.get(Etapa, etapa_id)
+
+    def test_iniciar_e_concluir_gravam_hora_de_sao_paulo(self):
+        from datetime import datetime as dt, timezone as tz
+        self._login()
+        etapa_id = self._criar_etapa_sem_horas()
+        # 12:05:30 UTC = 09:05:30 em Sao Paulo; 20:40:10 UTC = 17:40:10.
+        self._post_em(f'/etapas/{etapa_id}/iniciar', dt(2026, 11, 20, 12, 5, 30, tzinfo=tz.utc))
+        self.assertEqual(time(9, 5, 30), self._etapa(etapa_id).hora_inicio)
+        self._post_em(f'/etapas/{etapa_id}/concluir', dt(2026, 11, 20, 20, 40, 10, tzinfo=tz.utc))
+        etapa = self._etapa(etapa_id)
+        self.assertEqual(time(17, 40, 10), etapa.hora_fim)
+        self.assertEqual('Concluida', etapa.status)
+        self.assertIsNotNone(etapa.concluida_em)
+
+    def test_iniciar_e_concluir_preservam_horas_informadas(self):
+        from datetime import datetime as dt, timezone as tz
+        self._login()
+        etapa_id = V5EtapasCrudTestCase._criar_etapa(self, 'Etapa com horas')  # 09:00 a 10:00
+        self._post_em(f'/etapas/{etapa_id}/iniciar', dt(2026, 11, 20, 15, 0, tzinfo=tz.utc))
+        self._post_em(f'/etapas/{etapa_id}/concluir', dt(2026, 11, 20, 18, 0, tzinfo=tz.utc))
+        etapa = self._etapa(etapa_id)
+        self.assertEqual(time(9, 0), etapa.hora_inicio)
+        self.assertEqual(time(10, 0), etapa.hora_fim)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
