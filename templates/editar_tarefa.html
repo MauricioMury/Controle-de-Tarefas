@@ -80,6 +80,7 @@
                 </div>
                 <form method="POST" action="{{ url_for('editar_tarefa', id=tarefa.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
                     <div class="mb-3">
                         <label for="tarefa" class="form-label">Tarefa *</label>
                         <input type="text" class="form-control" id="tarefa" name="tarefa"
@@ -180,7 +181,7 @@
 
 
                     <div class="d-flex justify-content-between">
-                        <a href="{{ url_for('lista_tarefas',
+                        <a href="{{ next_url or url_for('lista_tarefas',
                             categoria=filtros.categoria,
                             prioridade=filtros.prioridade,
                             status=filtros.status,

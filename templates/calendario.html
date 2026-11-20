@@ -987,6 +987,65 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     let dragId     = null;
     let dragOrigin = null;
 
+    // ── Estado na URL (filtros, mês e dia) ───────────────────────
+    // Mantém a visão ao sair e voltar: os links de editar/duplicar levam
+    // esta URL em "next", e o servidor redireciona de volta para ela.
+    function opcaoExiste(select, valor) {
+        return Array.from(select.options).some(o => o.value === valor);
+    }
+
+    function carregarEstadoDaURL() {
+        const p = new URLSearchParams(window.location.search);
+        const campos = [
+            ['q', 'filtroTexto'], ['cat', 'filtroCategoria'],
+            ['status', 'filtroStatus'], ['tipo', 'filtroTipo'],
+        ];
+        campos.forEach(([chave, id]) => {
+            const valor = p.get(chave);
+            if (!valor) return;
+            const el = document.getElementById(id);
+            if (el.tagName === 'SELECT' && !opcaoExiste(el, valor)) return;
+            el.value = valor;
+        });
+        filtroTexto     = document.getElementById('filtroTexto').value.trim();
+        filtroCategoria = document.getElementById('filtroCategoria').value;
+        filtroStatus    = document.getElementById('filtroStatus').value;
+        filtroTipo      = document.getElementById('filtroTipo').value;
+
+        const mes = /^(\d{4})-(\d{2})$/.exec(p.get('mes') || '');
+        if (mes && +mes[2] >= 1 && +mes[2] <= 12) {
+            curYear  = +mes[1];
+            curMonth = +mes[2] - 1;
+        }
+        const dia = p.get('dia') || '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dia)) selectedDay = dia;
+    }
+
+    function salvarEstadoNaURL() {
+        const p = new URLSearchParams();
+        if (filtroTexto)     p.set('q', filtroTexto);
+        if (filtroCategoria) p.set('cat', filtroCategoria);
+        if (filtroStatus)    p.set('status', filtroStatus);
+        if (filtroTipo)      p.set('tipo', filtroTipo);
+        p.set('mes', `${curYear}-${String(curMonth + 1).padStart(2, '0')}`);
+        p.set('dia', selectedDay);
+        history.replaceState(null, '', `${window.location.pathname}?${p.toString()}`);
+    }
+
+    function urlAtual() {
+        return window.location.pathname + window.location.search;
+    }
+
+    // "?next=..." para links que saem do calendário
+    function comRetorno(href) {
+        return `${href}${href.includes('?') ? '&' : '?'}next=${encodeURIComponent(urlAtual())}`;
+    }
+
+    // Campo oculto "next" para formulários POST (concluir, deletar)
+    function campoRetorno() {
+        return `<input type="hidden" name="next" value="${escHtml(urlAtual())}">`;
+    }
+
     // ── Filtragem ────────────────────────────────────────────────
     function tarefasFiltradas() {
         if (!filtroTexto && !filtroCategoria && !filtroStatus && !filtroTipo) return ITENS_CALENDARIO;
@@ -1152,6 +1211,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     // ── Renderização do calendário ───────────────────────────────
     function renderCalendar() {
+        salvarEstadoNaURL();
         document.getElementById('calTitle').textContent =
             MESES[curMonth] + ' ' + curYear;
 
@@ -1318,7 +1378,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                     : `Faltam ${dias} dia${dias !== 1 ? 's' : ''}`;
             const dataTexto = `${String(data.getDate()).padStart(2,'0')}/${String(data.getMonth() + 1).padStart(2,'0')}/${data.getFullYear()}`;
 
-            card.href = isEtapa ? `/etapas/${item.id}/editar` : `/editar_tarefa/${item.id}`;
+            card.href = comRetorno(isEtapa ? `/etapas/${item.id}/editar` : `/editar_tarefa/${item.id}`);
             card.className = 'cal-deadline-card';
             card.title = isEtapa
                 ? `${item.tarefa} - ${item.tarefa_principal || ''}`
@@ -1428,28 +1488,30 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                 ? `<span class="cal-task-time"><i class="bi bi-clock"></i>${escHtml(t.hora_inicio)}${escHtml(horaFim)}</span>`
                 : '<span class="cal-task-time"><i class="bi bi-clock"></i>Horario nao definido</span>';
             const actionsHtml = isEtapa ? `
-                    <a href="/tarefas/${t.tarefa_id}/etapas" class="cal-task-btn btn-info" title="Abrir etapas">
+                    <a href="${escHtml(comRetorno(`/tarefas/${t.tarefa_id}/etapas`))}" class="cal-task-btn btn-info" title="Abrir etapas">
                         <i class="bi bi-diagram-3"></i>
                     </a>
-                    <a href="/etapas/${t.id}/editar" class="cal-task-btn" title="Editar etapa">
+                    <a href="${escHtml(comRetorno(`/etapas/${t.id}/editar`))}" class="cal-task-btn" title="Editar etapa">
                         <i class="bi bi-pencil"></i>
                     </a>` : `
                     ${t.status !== 'Concluída' ? `
                     <form method="POST" action="/marcar_concluida/${t.id}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        ${campoRetorno()}
                         <button type="submit" class="cal-task-btn btn-success" title="Marcar como concluída">
                             <i class="bi bi-check-lg"></i>
                         </button>
                     </form>` : ''}
-                    <a href="/duplicar_tarefa/${t.id}" class="cal-task-btn btn-info" title="Duplicar">
+                    <a href="${escHtml(comRetorno(`/duplicar_tarefa/${t.id}`))}" class="cal-task-btn btn-info" title="Duplicar">
                         <i class="bi bi-files"></i>
                     </a>
-                    <a href="/editar_tarefa/${t.id}" class="cal-task-btn" title="Editar">
+                    <a href="${escHtml(comRetorno(`/editar_tarefa/${t.id}`))}" class="cal-task-btn" title="Editar">
                         <i class="bi bi-pencil"></i>
                     </a>
                     <form method="POST" action="/deletar_tarefa/${t.id}" style="display:inline;"
                           onsubmit="return confirm('Deletar \'${escHtml(t.tarefa).replace(/'/g,'\\\'')}\' ?');">
                         <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        ${campoRetorno()}
                         <button type="submit" class="cal-task-btn btn-danger" title="Deletar">
                             <i class="bi bi-trash"></i>
                         </button>
@@ -1577,6 +1639,8 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
     // ── Init ─────────────────────────────────────────────────────
+    carregarEstadoDaURL();
+    atualizarUIFiltros();
     renderCalendar();
 })();
 </script>

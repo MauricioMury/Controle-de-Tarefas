@@ -19,7 +19,16 @@ Os detalhes de implementação e os testes de cada item ficam em `ai-context/loc
 
 ## [Não lançado]
 
-Nada ainda.
+---
+
+## [5.0.2] — 2026-11-20
+
+### Corrigido
+
+- Navegação: cadastrar, editar, duplicar, concluir e excluir tarefa (e editar etapa) voltam para a tela de origem, como o Calendário, em vez de sempre irem para Minhas Tarefas. Só caminhos internos são aceitos como retorno. (Etapa 2)
+- Calendário: filtros, mês e dia selecionado ficam na URL e são restaurados ao voltar, ao atualizar a página ou pelo botão Voltar do navegador. (Etapa 2)
+- Duplicar tarefa não deixa mais Minhas Tarefas filtrada pela prioridade da tarefa duplicada. (Etapa 2)
+- Edição de tarefa com erro de validação (ex.: hora fim antes da hora início) mostra a mensagem na tela em vez de cair em erro. (Etapa 2)
 
 ---
 

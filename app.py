@@ -15,7 +15,7 @@ from routes import register_auth_routes, register_routes
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 # Versao semantica da aplicacao. Atualizar junto com versoestarefas.md a cada release.
-APP_VERSION = '5.0.1'
+APP_VERSION = '5.0.2'
 
 
 @event.listens_for(Engine, 'connect')

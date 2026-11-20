@@ -74,3 +74,38 @@ Versões anteriores a este roadmap (V4 e V5) estão documentadas em `ai-context/
 - Teste visual aprovado por Mauricio em 2026-11-20: filtrar Minhas Tarefas (ex.: categoria + status), abrir o Início e conferir os números acima; voltar a Minhas Tarefas e conferir que os filtros continuam os mesmos.
 
 ---
+
+## Etapa 2 — Navegação entre telas
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 06:25
+- Término: 2026-11-20 08:04 (aprovado por Mauricio)
+- Versão: 5.0.2
+
+### Diagnóstico (2026-11-12)
+
+- Cadastrar, editar, duplicar, concluir e excluir tarefa sempre redirecionavam para `lista_tarefas` (`redirect_com_filtros('lista_tarefas')` em `routes/routes.py`), qualquer que fosse a tela de origem.
+- Os filtros do Calendário (texto, categoria, status, tipo) existiam só em variáveis JavaScript de `templates/calendario.html` e se perdiam ao sair e voltar.
+- O mesmo valia para as telas de etapa abertas pelo Calendário.
+- Achado em 2026-11-12 (Etapa 1): Duplicar redirecionava para `cadastro_tarefa?prioridade=...`, e o `get_filtros_ativos()` chamado no cadastro gravava esse `prioridade` na sessão como filtro. Depois de duplicar, Minhas Tarefas ficava filtrada pela prioridade da tarefa duplicada.
+
+### Tarefa 2.1 — Retorno à tela de origem
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 06:25 · Término: 2026-11-20 08:04 · Duração: 1 h 39 min (teste visual aprovado por Mauricio)
+- Escopo: parâmetro `next` levado pelos links de Duplicar, Editar, Nova tarefa e Concluir (Calendário, Minhas Tarefas, Início, etapas) e repassado no formulário. Após salvar ou cancelar, redirecionar para ele, validado como URL interna para evitar *open redirect*. Sem `next`, mantém o comportamento anterior.
+- Resultado: `routes/routes.py`: `url_retorno_segura()` (só caminho interno: começa com `/`, sem `//`, sem `\`, sem caracteres de controle, até 2000 caracteres), `destino_retorno()` (lê `next` do formulário ou da URL), `redirect_retorno()` (volta ao `next` ou, sem ele, a Minhas Tarefas com os filtros, como antes) e `filtros_da_sessao()` (lê os filtros sem gravar). Cadastrar, editar, duplicar (repassa o `next` ao cadastro), concluir e excluir tarefa usam `redirect_retorno`; salvar/excluir/mudar status de etapa usa o `next` em `resposta_etapa_salva`; a lista de etapas aberta com `next` mostra "Voltar" para a origem. Templates: campo oculto `next` e "Voltar" para a origem em `cadastro_tarefa.html`, `editar_tarefa.html` e `editar_etapa.html`; `lista_etapas.html` com "Voltar"; "Nova Tarefa" do Início volta ao Início.
+- Corrigido junto: (a) cadastro e edição não passam mais os campos de pré-preenchimento da duplicação por `get_filtros_ativos()`, então duplicar não filtra mais Minhas Tarefas pela prioridade; (b) erro de validação na edição de tarefa (ex.: hora fim antes da hora início) renderizava a tela sem `filtros`/`progresso` e caía em erro; agora mostra a tela com a mensagem, como no cadastro (commit `dea4b1e`).
+- Testes: `NavegacaoRetornoTestCase` em `tests_e2e_crud.py` (9 testes): validação de `next` (externo, `//`, `\`, `javascript:`, quebra de linha, vazio, longo); editar, duplicar + cadastrar, concluir, excluir e editar etapa voltam ao Calendário com os filtros; `next` externo é ignorado; sem `next` volta a Minhas Tarefas; duplicar não grava filtro de prioridade; lista de etapas com "Voltar"; erro de validação na edição renderiza. Contra o código antigo: 5 falhas e 2 erros. Suíte completa → 30 testes OK (2026-11-20 06:29).
+
+### Tarefa 2.2 — Filtros do Calendário persistentes
+
+- Status: CONCLUÍDO
+- Início: 2026-11-20 06:25 · Término: 2026-11-20 08:04 · Duração: 1 h 39 min (teste visual aprovado por Mauricio)
+- Escopo: guardar os filtros do Calendário e o mês em exibição para que voltar ao Calendário restaure a visão anterior, inclusive "Pendentes".
+- Decisão de implementação: **URL** (`history.replaceState`), porque funciona com o `next`, com o botão Voltar do navegador e com favoritos. O modo "Ver por" (Etapa 3) usará o mesmo mecanismo.
+- Resultado: `templates/calendario.html`: a URL do Calendário reflete `q` (busca), `cat`, `status`, `tipo`, `mes` (AAAA-MM) e `dia` (AAAA-MM-DD) a cada renderização; ao abrir, esses valores são lidos e validados (categoria e status só se existirem nas opções). Links de Editar, Duplicar, Editar etapa, Abrir etapas e dos cartões de prazo levam `next` com a URL atual; os formulários de Concluir e Deletar levam o campo oculto `next`.
+- Testes: `node --check` no JavaScript do template (ok).
+- Teste visual aprovado por Mauricio em 2026-11-20: Calendário → filtrar Pendentes, mudar de mês e escolher um dia → Duplicar → alterar a data → salvar → volta ao Calendário no mesmo mês e dia, com Pendentes. Repetido com Editar, Concluir, Deletar e Editar etapa; F5 com o Calendário filtrado mantém o filtro.
+
+---

@@ -30,7 +30,7 @@
             Aqui está o resumo das suas tarefas
         </p>
     </div>
-    <a href="{{ url_for('cadastro_tarefa') }}" class="btn btn-primary">
+    <a href="{{ url_for('cadastro_tarefa', next=url_for('index')) }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i> Nova Tarefa
     </a>
 </div>
@@ -88,7 +88,7 @@
 <p class="section-title">Ações rápidas</p>
 <div class="row g-3">
     <div class="col-md-3 col-6">
-        <a href="{{ url_for('cadastro_tarefa') }}" style="text-decoration:none;">
+        <a href="{{ url_for('cadastro_tarefa', next=url_for('index')) }}" style="text-decoration:none;">
             <div class="quick-card">
                 <div class="quick-icon" style="background:rgba(124,106,247,.15);color:var(--accent);">
                     <i class="bi bi-plus-circle"></i>

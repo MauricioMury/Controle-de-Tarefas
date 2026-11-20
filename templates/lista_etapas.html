@@ -82,9 +82,15 @@
                         Status da tarefa: {{ tarefa.status }}
                     </div>
                 </div>
+                {% if next_url %}
+                <a href="{{ next_url }}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> Voltar
+                </a>
+                {% else %}
                 <a href="{{ url_for('lista_tarefas') }}" class="btn btn-secondary btn-sm">
                     <i class="bi bi-arrow-left"></i> Minhas Tarefas
                 </a>
+                {% endif %}
             </div>
         </div>
 

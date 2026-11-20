@@ -19,6 +19,7 @@
             <div class="card-body">
                 <form method="POST" action="{{ url_for('cadastro_tarefa') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
                     {% if duplicate_id %}
                     <input type="hidden" name="duplicate_id" value="{{ duplicate_id }}">
                     <div class="alert alert-info">
@@ -127,7 +128,7 @@
 
 
                     <div class="form-actions justify-content-between">
-                        <a href="{{ url_for('lista_tarefas',
+                        <a href="{{ next_url or url_for('lista_tarefas',
                             categoria=filtros.categoria,
                             prioridade=filtros.prioridade,
                             status=filtros.status,

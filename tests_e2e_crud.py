@@ -3,6 +3,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask
 from flask_login import LoginManager, current_user
@@ -333,6 +334,119 @@ class V5EtapasCrudTestCase(unittest.TestCase):
         self.assertIn('Aplicar ordem da etapa', html)
         self.assertIn('Subir etapa', html)
         self.assertIn('Descer etapa', html)
+
+
+class NavegacaoRetornoTestCase(unittest.TestCase):
+    """Etapa 2: voltar para a tela de origem (parametro next)."""
+
+    # Reaproveita banco, usuario, tarefa e helpers do caso V5 sem herdar os testes dele.
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+    _criar_etapa = V5EtapasCrudTestCase._criar_etapa
+
+    CALENDARIO = '/calendario?status=Pendente&mes=2026-07&dia=2026-07-20'
+
+    def _form_tarefa(self, **extra):
+        dados = {
+            'tarefa': 'Implantar novo servidor',
+            'comentario': '',
+            'data_meta': '2026-07-20',
+            'data_realizado': '',
+            'hora_inicio': '09:00',
+            'hora_fim': '',
+            'prioridade': 'Normal',
+            'recorrencia': 'Nao',
+            'categoria_id': Categoria.query.first().id,
+        }
+        dados.update(extra)
+        return dados
+
+    def _location(self, response):
+        self.assertEqual(302, response.status_code)
+        return response.headers['Location']
+
+    def test_url_retorno_segura_aceita_so_caminhos_internos(self):
+        from routes.routes import url_retorno_segura
+
+        self.assertEqual(self.CALENDARIO, url_retorno_segura(self.CALENDARIO))
+        for valor in ('https://exemplo.com', '//exemplo.com', '/\\exemplo.com', 'javascript:alert(1)',
+                      'calendario', '/calendario\r\nSet-Cookie: x=1', '', None, '/' + 'a' * 3000):
+            with self.subTest(valor=valor):
+                self.assertIsNone(url_retorno_segura(valor))
+
+    def test_editar_volta_para_o_calendario_com_filtros(self):
+        self._login()
+        html = self.client.get(f'/editar_tarefa/{self.tarefa_id}?next={quote(self.CALENDARIO)}').get_data(as_text=True)
+        self.assertIn('name="next"', html)
+
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(next=self.CALENDARIO))
+        self.assertEqual(self.CALENDARIO, self._location(response))
+
+    def test_next_externo_e_ignorado(self):
+        self._login()
+        for externo in ('https://exemplo.com/', '//exemplo.com/'):
+            with self.subTest(next=externo):
+                response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(next=externo))
+                location = self._location(response)
+                self.assertTrue(location.startswith('/lista_tarefas'), location)
+
+    def test_sem_next_mantem_retorno_para_minhas_tarefas(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa())
+        self.assertTrue(self._location(response).startswith('/lista_tarefas'))
+
+    def test_duplicar_pelo_calendario_volta_para_o_calendario(self):
+        self._login()
+        location = self._location(self.client.get(f'/duplicar_tarefa/{self.tarefa_id}?next={quote(self.CALENDARIO)}'))
+        self.assertIn('next=', location)
+
+        # Abrir o cadastro com os dados da duplicacao nao vira filtro de Minhas Tarefas.
+        html = self.client.get(location).get_data(as_text=True)
+        self.assertIn('name="next"', html)
+        with self.client.session_transaction() as sessao:
+            self.assertFalse(sessao.get('filtro_prioridade'))
+
+        response = self.client.post('/cadastro_tarefa', data=self._form_tarefa(
+            data_meta='2026-07-27', duplicate_id=self.tarefa_id, next=self.CALENDARIO))
+        self.assertEqual(self.CALENDARIO, self._location(response))
+        self.assertEqual(2, Tarefa.query.count())
+
+    def test_concluir_e_deletar_pelo_calendario_voltam_para_o_calendario(self):
+        self._login()
+        response = self.client.post(f'/marcar_concluida/{self.tarefa_id}', data={'next': self.CALENDARIO})
+        self.assertEqual(self.CALENDARIO, self._location(response))
+
+        response = self.client.post(f'/deletar_tarefa/{self.tarefa_id}', data={'next': self.CALENDARIO})
+        self.assertEqual(self.CALENDARIO, self._location(response))
+        self.assertEqual(0, Tarefa.query.count())
+
+    def test_editar_etapa_pelo_calendario_volta_para_o_calendario(self):
+        self._login()
+        etapa_id = self._criar_etapa('Etapa do calendario')
+        html = self.client.get(f'/etapas/{etapa_id}/editar?next={quote(self.CALENDARIO)}').get_data(as_text=True)
+        self.assertIn('name="next"', html)
+
+        response = self.client.post(f'/etapas/{etapa_id}/editar', data={
+            'titulo': 'Etapa editada', 'descricao': '', 'data_planejada': '2026-07-21',
+            'hora_inicio': '', 'hora_fim': '', 'next': self.CALENDARIO,
+        })
+        self.assertEqual(self.CALENDARIO, self._location(response))
+
+    def test_lista_de_etapas_aberta_pelo_calendario_tem_botao_voltar(self):
+        self._login()
+        html = self.client.get(f'/tarefas/{self.tarefa_id}/etapas?next={quote(self.CALENDARIO)}').get_data(as_text=True)
+        self.assertIn('href="/calendario?status=Pendente&amp;mes=2026-07&amp;dia=2026-07-20"', html)
+
+    def test_erro_de_validacao_na_edicao_renderiza_a_tela(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            hora_inicio='10:00', hora_fim='09:00', next=self.CALENDARIO))
+        self.assertEqual(200, response.status_code)
+        html = response.get_data(as_text=True)
+        self.assertIn('A hora de fim deve ser posterior', html)
+        self.assertIn('name="next"', html)
 
 
 class ListaTarefasPaginacaoTestCase(unittest.TestCase):

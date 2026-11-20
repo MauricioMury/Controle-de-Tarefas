@@ -122,6 +122,47 @@ def redirect_com_filtros(rota, **kwargs):
     return redirect(url_for(rota, **filtros_limpos))
 
 
+def filtros_da_sessao():
+    """Filtros de Minhas Tarefas gravados na sessao, sem ler a URL nem gravar nada.
+
+    Usado nas telas de cadastro/edicao, cuja URL traz campos de pre-preenchimento
+    (ex.: prioridade da tarefa duplicada) que nao sao filtros.
+    """
+    return {
+        'categoria': session.get('filtro_categoria', ''),
+        'prioridade': session.get('filtro_prioridade', ''),
+        'status': session.get('filtro_status', ''),
+        'data': session.get('filtro_data', ''),
+        'busca': session.get('filtro_busca', ''),
+        'page': session.get('filtro_page', 1),
+        'per_page': session.get('filtro_per_page', POR_PAGINA_PADRAO),
+    }
+
+
+def url_retorno_segura(valor):
+    """Aceita so caminhos internos ('/calendario?...'); recusa URLs externas (open redirect)."""
+    if not valor or len(valor) > 2000:
+        return None
+    if not valor.startswith('/') or valor.startswith('//') or '\\' in valor:
+        return None
+    if any(ord(c) < 32 for c in valor):
+        return None
+    return valor
+
+
+def destino_retorno():
+    """Tela de origem informada em 'next' (formulario ou URL), se for segura."""
+    return url_retorno_segura(request.form.get('next') or request.args.get('next'))
+
+
+def redirect_retorno(rota_padrao):
+    """Volta para a tela de origem; sem ela, para a rota padrao com os filtros ativos."""
+    destino = destino_retorno()
+    if destino:
+        return redirect(destino)
+    return redirect_com_filtros(rota_padrao)
+
+
 def get_local_user():
     """Compatibilidade temporaria: retorna o usuario autenticado."""
     return current_user
@@ -554,7 +595,7 @@ def resposta_etapa_salva(tarefa_id, mensagem):
     if request.is_json:
         return jsonify({'ok': True, 'mensagem': mensagem})
     flash(mensagem, 'success')
-    return redirect(url_for('listar_etapas_tarefa', id=tarefa_id))
+    return redirect(destino_retorno() or url_for('listar_etapas_tarefa', id=tarefa_id))
 
 
 def resposta_erro_etapa(mensagem, status_code=400):
@@ -711,7 +752,8 @@ def register_routes(app):
     def cadastro_tarefa():
         """Cadastro de nova tarefa."""
         categorias = categorias_do_usuario()
-        filtros = get_filtros_ativos()
+        filtros = filtros_da_sessao()
+        next_url = destino_retorno()
 
         if request.method == 'POST':
             try:
@@ -723,7 +765,7 @@ def register_routes(app):
                     tarefa_origem = buscar_tarefa_ou_404(duplicate_id)
             except ValueError as e:
                 flash(str(e), 'danger')
-                return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros)
+                return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros, next_url=next_url)
             except Exception as e:
                 flash(f'Erro ao cadastrar tarefa: {str(e)}', 'danger')
             else:
@@ -738,11 +780,11 @@ def register_routes(app):
                         flash('Tarefa e etapas duplicadas com sucesso!', 'success')
                     else:
                         flash('Tarefa cadastrada com sucesso!', 'success')
-                    return redirect_com_filtros('lista_tarefas')
+                    return redirect_retorno('lista_tarefas')
                 except Exception as e:
                     db.session.rollback()
                     flash(f'Erro ao cadastrar tarefa: {str(e)}', 'danger')
-                    return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros)
+                    return render_template('cadastro_tarefa.html', categorias=categorias, filtros=filtros, next_url=next_url)
 
         return render_template(
             'cadastro_tarefa.html',
@@ -755,6 +797,7 @@ def register_routes(app):
             recorrencia=request.args.get('recorrencia', ''),
             categoria_id=request.args.get('categoria_id', type=int),
             filtros=filtros,
+            next_url=next_url,
         )
 
     @app.route('/lista_tarefas')
@@ -835,6 +878,17 @@ def register_routes(app):
         """Editar tarefa existente."""
         tarefa = buscar_tarefa_ou_404(id)
         categorias = categorias_do_usuario()
+        next_url = destino_retorno()
+
+        def renderizar_edicao():
+            return render_template(
+                'editar_tarefa.html',
+                tarefa=tarefa,
+                categorias=categorias,
+                progresso=calcular_progresso_tarefa(tarefa),
+                filtros=filtros_da_sessao(),
+                next_url=next_url,
+            )
 
         if request.method == 'POST':
             try:
@@ -842,22 +896,17 @@ def register_routes(app):
                 aplicar_dados_tarefa(tarefa, dados)
                 db.session.commit()
                 flash('Tarefa atualizada com sucesso!', 'success')
-                return redirect_com_filtros('lista_tarefas')
+                return redirect_retorno('lista_tarefas')
 
             except ValueError as e:
+                db.session.rollback()
                 flash(str(e), 'danger')
-                return render_template('editar_tarefa.html', tarefa=tarefa, categorias=categorias)
+                return renderizar_edicao()
             except Exception as e:
                 db.session.rollback()
                 flash(f'Erro ao atualizar tarefa: {str(e)}', 'danger')
 
-        return render_template(
-            'editar_tarefa.html',
-            tarefa=tarefa,
-            categorias=categorias,
-            progresso=calcular_progresso_tarefa(tarefa),
-            filtros=get_filtros_ativos(),
-        )
+        return renderizar_edicao()
 
     @app.route('/duplicar_tarefa/<int:id>')
     @login_required
@@ -874,6 +923,7 @@ def register_routes(app):
             prioridade=tarefa.prioridade,
             recorrencia=tarefa.recorrencia,
             categoria_id=tarefa.categoria_id,
+            next=destino_retorno(),
         ))
 
     @app.route('/deletar_tarefa/<int:id>', methods=['POST'])
@@ -885,7 +935,7 @@ def register_routes(app):
         db.session.commit()
 
         flash('Tarefa deletada com sucesso!', 'success')
-        return redirect_com_filtros('lista_tarefas')
+        return redirect_retorno('lista_tarefas')
 
     @app.route('/marcar_concluida/<int:id>', methods=['POST'])
     @login_required
@@ -897,7 +947,7 @@ def register_routes(app):
         db.session.commit()
 
         flash('Tarefa marcada como concluída!', 'success')
-        return redirect_com_filtros('lista_tarefas')
+        return redirect_retorno('lista_tarefas')
 
     @app.route('/tarefas/<int:id>/etapas')
     @login_required
@@ -924,6 +974,7 @@ def register_routes(app):
             etapas=etapas,
             progresso=progresso,
             transicoes_status=TRANSICOES_STATUS_ETAPA,
+            next_url=destino_retorno(),
         )
 
     @app.route('/tarefas/<int:id>/etapas/nova', methods=['GET', 'POST'])
@@ -972,6 +1023,7 @@ def register_routes(app):
                 'editar_etapa.html',
                 tarefa=etapa.tarefa_ref,
                 etapa=etapa,
+                next_url=destino_retorno(),
             )
 
         try:

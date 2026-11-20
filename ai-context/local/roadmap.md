@@ -1,6 +1,6 @@
 # Roadmap — Controle de Tarefas
 
-Data de revisão: 2026-11-12
+Data de revisão: 2026-11-20
 
 Este arquivo contém as regras, a visão geral, as decisões vigentes, a etapa ativa e as pendentes. Evidências de etapas concluídas ficam em `ai-context/local/roadmap-historico.md`, lido somente quando necessário.
 
@@ -38,7 +38,7 @@ Status permitidos: `PENDENTE`, `ANDAMENTO`, `CONCLUÍDO`.
 | --- | --- | --- | --- | --- |
 | 0 | Decisões iniciais | Evoluir este projeto; papel das datas; regras das notificações | CONCLUÍDO | — |
 | 1 | Minhas Tarefas: itens por página | Paginação correta e Início sem os filtros de Minhas Tarefas | CONCLUÍDO | 5.0.1 |
-| 2 | Navegação entre telas | Voltar à tela de origem após salvar e manter os filtros do Calendário | PENDENTE | 5.0.2 (prevista) |
+| 2 | Navegação entre telas | Voltar à tela de origem após salvar e manter os filtros do Calendário | CONCLUÍDO | 5.0.2 |
 | 3 | Data de criação | Exibir "Criada em" e seletor "Ver por: Meta / Criação" no Calendário | PENDENTE | 5.1.0 (prevista) |
 | 4 | Notificações | Religar o cadastro de lembretes na tarefa e o disparo por e-mail e WhatsApp | PENDENTE | 5.2.0 (prevista) |
 | 5 | Qualidade e dados | Corrigir status com acentuação corrompida e o `DeprecationWarning` de `datetime.utcnow()` | PENDENTE | 5.2.1 (prevista) |
@@ -73,27 +73,7 @@ CONCLUÍDO em 2026-11-20 06:12 (versão 5.0.1). Evidências em `roadmap-historic
 
 ## Etapa 2 — Navegação entre telas
 
-- Status: PENDENTE
-
-### Diagnóstico (2026-11-12)
-
-- Cadastrar, editar, duplicar, concluir e excluir tarefa sempre redirecionam para `lista_tarefas` (`redirect_com_filtros('lista_tarefas')` em `routes/routes.py`), qualquer que seja a tela de origem.
-- Os filtros do Calendário (texto, categoria, status, tipo) existem só em variáveis JavaScript de `templates/calendario.html`. Ao sair e voltar, eles são perdidos.
-- O mesmo vale para as telas de etapa abertas pelo Calendário.
-- Achado em 2026-11-12 (Etapa 1): Duplicar redireciona para `cadastro_tarefa?prioridade=...`, e o `get_filtros_ativos()` chamado no cadastro lê esse `prioridade` como se fosse filtro e o grava na sessão. Depois de duplicar, Minhas Tarefas fica filtrada pela prioridade da tarefa duplicada. Corrigir junto com a Tarefa 2.1 (os parâmetros de pré-preenchimento não podem passar por `get_filtros_ativos()`).
-
-### Tarefa 2.1 — Retorno à tela de origem
-
-- Status: PENDENTE
-- Escopo: parâmetro `next` levado pelos links de Duplicar, Editar, Nova tarefa e Concluir (Calendário, Minhas Tarefas, Dashboard, etapas) e repassado no formulário. Após salvar ou cancelar, redirecionar para ele, validado como URL interna (mesma regra de `_next_url_segura` em `routes/auth.py`, para evitar *open redirect*). Sem `next`, mantém o comportamento atual.
-- Testes: redireciona ao Calendário quando `next=/calendario`; ignora `next` externo (`https://...`, `//...`).
-
-### Tarefa 2.2 — Filtros do Calendário persistentes
-
-- Status: PENDENTE
-- Escopo: guardar os filtros do Calendário, o mês/semana em exibição e o modo "Ver por" (Etapa 3) na URL ou na sessão, para que voltar ao Calendário restaure a visão anterior, inclusive "Pendentes".
-- A decidir na implementação: URL (permite favoritos e funciona com o `next`) ou `sessionStorage`.
-- Testes: teste visual de Mauricio (Calendário → filtrar Pendentes → Duplicar → salvar → volta ao Calendário com o filtro ativo).
+CONCLUÍDO em 2026-11-20 08:04 (versão 5.0.2). Evidências em `roadmap-historico.md`.
 
 ---
 
