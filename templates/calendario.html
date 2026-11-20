@@ -835,6 +835,11 @@
             <option value="tarefa">Somente tarefas</option>
             <option value="etapa">Somente etapas</option>
         </select>
+        <select class="cal-filter-select" id="filtroVerPor" title="Em qual data cada tarefa aparece no calendário">
+            <option value="meta">Ver por: Meta</option>
+            <option value="inicio">Ver por: Início</option>
+            <option value="criacao">Ver por: Criação</option>
+        </select>
         <button class="cal-filter-clear" id="btnLimparFiltros" style="display:none;">
             <i class="bi bi-x-circle"></i> Limpar
         </button>
@@ -982,10 +987,74 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     let filtroCategoria = '';
     let filtroStatus   = '';
     let filtroTipo     = '';
+    // Data usada para posicionar a tarefa: 'meta' (padrão), 'inicio' ou 'criacao'
+    let verPor         = 'meta';
 
     // Drag & drop
     let dragId     = null;
     let dragOrigin = null;
+
+    // ── Estado na URL (filtros, mês e dia) ───────────────────────
+    // Mantém a visão ao sair e voltar: os links de editar/duplicar levam
+    // esta URL em "next", e o servidor redireciona de volta para ela.
+    function opcaoExiste(select, valor) {
+        return Array.from(select.options).some(o => o.value === valor);
+    }
+
+    function carregarEstadoDaURL() {
+        const p = new URLSearchParams(window.location.search);
+        const campos = [
+            ['q', 'filtroTexto'], ['cat', 'filtroCategoria'],
+            ['status', 'filtroStatus'], ['tipo', 'filtroTipo'],
+            ['ver', 'filtroVerPor'],
+        ];
+        campos.forEach(([chave, id]) => {
+            const valor = p.get(chave);
+            if (!valor) return;
+            const el = document.getElementById(id);
+            if (el.tagName === 'SELECT' && !opcaoExiste(el, valor)) return;
+            el.value = valor;
+        });
+        filtroTexto     = document.getElementById('filtroTexto').value.trim();
+        filtroCategoria = document.getElementById('filtroCategoria').value;
+        filtroStatus    = document.getElementById('filtroStatus').value;
+        filtroTipo      = document.getElementById('filtroTipo').value;
+        verPor          = document.getElementById('filtroVerPor').value;
+
+        const mes = /^(\d{4})-(\d{2})$/.exec(p.get('mes') || '');
+        if (mes && +mes[2] >= 1 && +mes[2] <= 12) {
+            curYear  = +mes[1];
+            curMonth = +mes[2] - 1;
+        }
+        const dia = p.get('dia') || '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dia)) selectedDay = dia;
+    }
+
+    function salvarEstadoNaURL() {
+        const p = new URLSearchParams();
+        if (filtroTexto)     p.set('q', filtroTexto);
+        if (filtroCategoria) p.set('cat', filtroCategoria);
+        if (filtroStatus)    p.set('status', filtroStatus);
+        if (filtroTipo)      p.set('tipo', filtroTipo);
+        if (verPor !== 'meta') p.set('ver', verPor);
+        p.set('mes', `${curYear}-${String(curMonth + 1).padStart(2, '0')}`);
+        p.set('dia', selectedDay);
+        history.replaceState(null, '', `${window.location.pathname}?${p.toString()}`);
+    }
+
+    function urlAtual() {
+        return window.location.pathname + window.location.search;
+    }
+
+    // "?next=..." para links que saem do calendário
+    function comRetorno(href) {
+        return `${href}${href.includes('?') ? '&' : '?'}next=${encodeURIComponent(urlAtual())}`;
+    }
+
+    // Campo oculto "next" para formulários POST (concluir, deletar)
+    function campoRetorno() {
+        return `<input type="hidden" name="next" value="${escHtml(urlAtual())}">`;
+    }
 
     // ── Filtragem ────────────────────────────────────────────────
     function tarefasFiltradas() {
@@ -1005,12 +1074,22 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         });
     }
 
+    // Dia em que o item aparece, conforme "Ver por". Etapas ficam sempre na data planejada.
+    // Sem data de início, a tarefa fica no dia da meta (com o selo "Sem data de início").
+    function diaDoItem(t) {
+        if (t.tipo === 'etapa') return t.data_meta;
+        if (verPor === 'inicio')  return t.data_inicio || t.data_meta;
+        if (verPor === 'criacao') return t.data_criacao || t.data_meta;
+        return t.data_meta;
+    }
+
     // Recomputa tarefasPorDia com filtro aplicado
     function buildTarefasPorDia(lista) {
         const m = {};
         lista.forEach(t => {
-            if (!m[t.data_meta]) m[t.data_meta] = [];
-            m[t.data_meta].push(t);
+            const dia = diaDoItem(t);
+            if (!m[dia]) m[dia] = [];
+            m[dia].push(t);
         });
         return m;
     }
@@ -1020,7 +1099,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     function renderKpis() {
         const prefixo = `${curYear}-${String(curMonth + 1).padStart(2,'0')}`;
-        const doMes   = TAREFAS.filter(t => t.data_meta.startsWith(prefixo));
+        const doMes   = TAREFAS.filter(t => diaDoItem(t).startsWith(prefixo));
 
         const concluidas = doMes.filter(t => t.status === 'Concluída').length;
         const pendentes  = doMes.filter(t => t.status !== 'Concluída').length;
@@ -1037,7 +1116,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         // Gráfico: contagem por dia da semana (0=Dom … 6=Sáb)
         const contagemDia = [0,0,0,0,0,0,0];
         doMes.forEach(t => {
-            const dow = new Date(t.data_meta + 'T00:00:00').getDay();
+            const dow = new Date(diaDoItem(t) + 'T00:00:00').getDay();
             contagemDia[dow]++;
         });
 
@@ -1140,6 +1219,12 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
         renderCalendar();
     });
 
+    // "Ver por" não é filtro: muda só a data usada para posicionar as tarefas.
+    document.getElementById('filtroVerPor').addEventListener('change', function() {
+        verPor = this.value;
+        renderCalendar();
+    });
+
     document.getElementById('btnLimparFiltros').addEventListener('click', () => {
         filtroTexto = ''; filtroCategoria = ''; filtroStatus = ''; filtroTipo = '';
         document.getElementById('filtroTexto').value    = '';
@@ -1152,6 +1237,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     // ── Renderização do calendário ───────────────────────────────
     function renderCalendar() {
+        salvarEstadoNaURL();
         document.getElementById('calTitle').textContent =
             MESES[curMonth] + ' ' + curYear;
 
@@ -1207,6 +1293,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
             e.preventDefault();
             div.classList.remove('drag-over');
             if (!dragId || String(dragId).startsWith('etapa-') || dateISO === dragOrigin) return;
+            if (verPor === 'criacao') return;  // a data de criação não é alterada
             moverTarefa(dragId, dragOrigin, dateISO);
         });
 
@@ -1318,7 +1405,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                     : `Faltam ${dias} dia${dias !== 1 ? 's' : ''}`;
             const dataTexto = `${String(data.getDate()).padStart(2,'0')}/${String(data.getMonth() + 1).padStart(2,'0')}/${data.getFullYear()}`;
 
-            card.href = isEtapa ? `/etapas/${item.id}/editar` : `/editar_tarefa/${item.id}`;
+            card.href = comRetorno(isEtapa ? `/etapas/${item.id}/editar` : `/editar_tarefa/${item.id}`);
             card.className = 'cal-deadline-card';
             card.title = isEtapa
                 ? `${item.tarefa} - ${item.tarefa_principal || ''}`
@@ -1383,12 +1470,13 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
             const card = document.createElement('div');
             const isEtapa = t.tipo === 'etapa';
             card.className = 'cal-task-card' + (isEtapa ? ' cal-step-card' : '');
-            card.draggable = !isEtapa;
+            // Arrastar muda a Meta (Ver por Meta) ou o Início (Ver por Início); na Criação, não.
+            card.draggable = !isEtapa && verPor !== 'criacao';
             card.dataset.id   = isEtapa ? `etapa-${t.id}` : t.id;
             card.dataset.data = dateISO;
 
             card.addEventListener('dragstart', e => {
-                if (isEtapa) {
+                if (isEtapa || verPor === 'criacao') {
                     e.preventDefault();
                     return;
                 }
@@ -1424,32 +1512,58 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
             const parentHtml = isEtapa
                 ? `<div class="cal-task-parent"><i class="bi bi-list-task"></i> ${escHtml(t.tarefa_principal)}</div>`
                 : '';
-            const horaHtml = t.hora_inicio
-                ? `<span class="cal-task-time"><i class="bi bi-clock"></i>${escHtml(t.hora_inicio)}${escHtml(horaFim)}</span>`
-                : '<span class="cal-task-time"><i class="bi bi-clock"></i>Horario nao definido</span>';
+            const dataCurta = iso => iso ? iso.split('-').reverse().slice(0, 2).join('/') : '';
+            let horaHtml;
+            if (isEtapa) {
+                horaHtml = t.hora_inicio
+                    ? `<span class="cal-task-time"><i class="bi bi-clock"></i>${escHtml(t.hora_inicio)}${escHtml(horaFim)}</span>`
+                    : '<span class="cal-task-time"><i class="bi bi-clock"></i>Horario nao definido</span>';
+            } else {
+                // Tarefa: cada hora pertence a sua data (inicio e realizado).
+                const inicioHtml = t.data_inicio
+                    ? `<span class="cal-task-time" title="Data de início"><i class="bi bi-play-circle"></i>Início ${escHtml(dataCurta(t.data_inicio))}${t.hora_inicio ? ' ' + escHtml(t.hora_inicio) : ''}</span>`
+                    : (t.status !== 'Concluída'
+                        ? '<span class="badge bg-warning text-dark cal-task-badge" title="Edite a tarefa para informar a data de início">Sem data de início</span>'
+                        : '');
+                const fimHtml = t.data_realizado
+                    ? `<span class="cal-task-time" title="Data realizado"><i class="bi bi-check-circle"></i>Fim ${escHtml(dataCurta(t.data_realizado))}${t.hora_fim ? ' ' + escHtml(t.hora_fim) : ''}</span>`
+                    : '';
+                // Concluida depois da meta: quantos dias atrasou.
+                let atrasoHtml = '';
+                if (t.data_realizado && t.data_realizado > t.data_meta) {
+                    const dias = Math.round((new Date(t.data_realizado + 'T00:00:00') - new Date(t.data_meta + 'T00:00:00')) / 86400000);
+                    atrasoHtml = `<span class="badge bg-danger cal-task-badge" title="Data realizado depois da meta">Concluída com ${dias} dia${dias !== 1 ? 's' : ''} de atraso</span>`;
+                }
+                horaHtml = inicioHtml + fimHtml + atrasoHtml;
+            }
+            const criadaHtml = (!isEtapa && t.criada_em)
+                ? `<div class="cal-task-time cal-task-created" title="Data de criação"><i class="bi bi-calendar-plus"></i>Criada em ${escHtml(t.criada_em)}</div>`
+                : '';
             const actionsHtml = isEtapa ? `
-                    <a href="/tarefas/${t.tarefa_id}/etapas" class="cal-task-btn btn-info" title="Abrir etapas">
+                    <a href="${escHtml(comRetorno(`/tarefas/${t.tarefa_id}/etapas`))}" class="cal-task-btn btn-info" title="Abrir etapas">
                         <i class="bi bi-diagram-3"></i>
                     </a>
-                    <a href="/etapas/${t.id}/editar" class="cal-task-btn" title="Editar etapa">
+                    <a href="${escHtml(comRetorno(`/etapas/${t.id}/editar`))}" class="cal-task-btn" title="Editar etapa">
                         <i class="bi bi-pencil"></i>
                     </a>` : `
                     ${t.status !== 'Concluída' ? `
                     <form method="POST" action="/marcar_concluida/${t.id}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        ${campoRetorno()}
                         <button type="submit" class="cal-task-btn btn-success" title="Marcar como concluída">
                             <i class="bi bi-check-lg"></i>
                         </button>
                     </form>` : ''}
-                    <a href="/duplicar_tarefa/${t.id}" class="cal-task-btn btn-info" title="Duplicar">
+                    <a href="${escHtml(comRetorno(`/duplicar_tarefa/${t.id}`))}" class="cal-task-btn btn-info" title="Duplicar">
                         <i class="bi bi-files"></i>
                     </a>
-                    <a href="/editar_tarefa/${t.id}" class="cal-task-btn" title="Editar">
+                    <a href="${escHtml(comRetorno(`/editar_tarefa/${t.id}`))}" class="cal-task-btn" title="Editar">
                         <i class="bi bi-pencil"></i>
                     </a>
                     <form method="POST" action="/deletar_tarefa/${t.id}" style="display:inline;"
                           onsubmit="return confirm('Deletar \'${escHtml(t.tarefa).replace(/'/g,'\\\'')}\' ?');">
                         <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        ${campoRetorno()}
                         <button type="submit" class="cal-task-btn btn-danger" title="Deletar">
                             <i class="bi bi-trash"></i>
                         </button>
@@ -1460,6 +1574,7 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
                 <div class="cal-task-body">
                     <div class="cal-task-name">${escHtml(t.tarefa)}</div>
                     ${parentHtml}
+                    ${criadaHtml}
                     <div class="cal-task-meta">
                         ${horaHtml}
                         ${isEtapa ? itemBadge : `<span class="badge ${priClass} cal-task-badge">${escHtml(t.prioridade)}</span>`}
@@ -1489,24 +1604,26 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
 
     // ── Drag & drop: mover tarefa ────────────────────────────────
     function moverTarefa(tarefaId, origem, destino) {
+        const campo = verPor === 'inicio' ? 'data_inicio' : 'data_meta';
         fetch(`/mover_tarefa/${tarefaId}`, {
             method:  'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': CSRF_TOKEN
             },
-            body:    JSON.stringify({ data_meta: destino })
+            body:    JSON.stringify({ [campo]: destino })
         })
         .then(r => r.json())
         .then(data => {
             if (data.ok) {
                 // Atualiza o array global TAREFAS (buildTarefasPorDia recalcula a partir dele)
                 const tarefa = TAREFAS.find(t => t.id === tarefaId);
-                if (tarefa) tarefa.data_meta = destino;
+                if (tarefa) tarefa[campo] = destino;
                 selectedDay = destino;
                 renderCalendar();
                 const p = destino.split('-');
-                showToast(`Tarefa movida para ${p[2]}/${p[1]}/${p[0]}`, true);
+                const oque = campo === 'data_inicio' ? 'Início movido' : 'Meta movida';
+                showToast(`${oque} para ${p[2]}/${p[1]}/${p[0]}`, true);
             } else {
                 showToast(data.erro || 'Erro ao mover tarefa', false);
             }
@@ -1577,6 +1694,8 @@ const CSRF_TOKEN = '{{ csrf_token() }}';
     applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
     // ── Init ─────────────────────────────────────────────────────
+    carregarEstadoDaURL();
+    atualizarUIFiltros();
     renderCalendar();
 })();
 </script>

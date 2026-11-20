@@ -30,7 +30,7 @@
             Aqui está o resumo das suas tarefas
         </p>
     </div>
-    <a href="{{ url_for('cadastro_tarefa') }}" class="btn btn-primary">
+    <a href="{{ url_for('cadastro_tarefa', next=url_for('index')) }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i> Nova Tarefa
     </a>
 </div>
@@ -41,7 +41,7 @@
         <div class="stat-card">
             <div class="stat-icon purple"><i class="bi bi-list-task"></i></div>
             <div>
-                <div class="stat-val" id="stat-total">—</div>
+                <div class="stat-val" id="stat-total">{{ indicadores.total }}</div>
                 <div class="stat-lbl">Total</div>
             </div>
         </div>
@@ -50,7 +50,7 @@
         <div class="stat-card">
             <div class="stat-icon blue"><i class="bi bi-clock"></i></div>
             <div>
-                <div class="stat-val" id="stat-pendente">—</div>
+                <div class="stat-val" id="stat-pendente">{{ indicadores.pendentes }}</div>
                 <div class="stat-lbl">Pendentes</div>
             </div>
         </div>
@@ -59,7 +59,7 @@
         <div class="stat-card">
             <div class="stat-icon green"><i class="bi bi-check-circle"></i></div>
             <div>
-                <div class="stat-val" id="stat-concluida">—</div>
+                <div class="stat-val" id="stat-concluida">{{ indicadores.concluidas }}</div>
                 <div class="stat-lbl">Concluídas</div>
             </div>
         </div>
@@ -68,7 +68,7 @@
         <div class="stat-card">
             <div class="stat-icon red"><i class="bi bi-exclamation-triangle"></i></div>
             <div>
-                <div class="stat-val" id="stat-importante">—</div>
+                <div class="stat-val" id="stat-importante">{{ indicadores.alta_prioridade }}</div>
                 <div class="stat-lbl">Alta Prioridade</div>
             </div>
         </div>
@@ -77,7 +77,7 @@
         <div class="stat-card">
             <div class="stat-icon yellow"><i class="bi bi-calendar-check"></i></div>
             <div>
-                <div class="stat-val" id="stat-hoje">—</div>
+                <div class="stat-val" id="stat-hoje">{{ indicadores.hoje }}</div>
                 <div class="stat-lbl">Hoje</div>
             </div>
         </div>
@@ -88,7 +88,7 @@
 <p class="section-title">Ações rápidas</p>
 <div class="row g-3">
     <div class="col-md-3 col-6">
-        <a href="{{ url_for('cadastro_tarefa') }}" style="text-decoration:none;">
+        <a href="{{ url_for('cadastro_tarefa', next=url_for('index')) }}" style="text-decoration:none;">
             <div class="quick-card">
                 <div class="quick-icon" style="background:rgba(124,106,247,.15);color:var(--accent);">
                     <i class="bi bi-plus-circle"></i>
@@ -134,46 +134,3 @@
 </div>
 {% endblock %}
 
-{% block extra_js %}
-<script>
-// Buscar stats via API simples (contagem de tarefas)
-fetch('{{ url_for("lista_tarefas") }}?per_page=1000')
-  .then(function(r){ return r.text(); })
-  .then(function(html){
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html,'text/html');
-    var badge = doc.querySelector('.badge.bg-secondary');
-    if(badge){
-        var txt = badge.textContent.replace(/\D/g,'');
-        document.getElementById('stat-total').textContent = txt || '0';
-    }
-  }).catch(function(){});
-
-// Stats via fetch das rotas existentes — fallback simples
-var stats = [
-    {id:'stat-total',    url:'{{ url_for("lista_tarefas") }}'},
-    {id:'stat-pendente', url:'{{ url_for("lista_tarefas") }}?status=Pendente'},
-    {id:'stat-concluida',url:'{{ url_for("lista_tarefas") }}?status=Conclu%C3%ADda'},
-    {id:'stat-importante',url:'{{ url_for("lista_tarefas") }}?prioridade=Muito+Importante'},
-];
-
-stats.forEach(function(s){
-    fetch(s.url+'&per_page=1')
-      .then(function(r){return r.text();})
-      .then(function(html){
-        var m = html.match(/Total:\s*(\d+)\s*tarefas/);
-        if(m) document.getElementById(s.id).textContent = m[1];
-        else document.getElementById(s.id).textContent = '0';
-      }).catch(function(){ document.getElementById(s.id).textContent = '—'; });
-});
-
-// Stat "hoje"
-var hoje = new Date().toISOString().slice(0,10);
-fetch('{{ url_for("lista_tarefas") }}?data='+hoje+'&per_page=1')
-  .then(function(r){return r.text();})
-  .then(function(html){
-    var m = html.match(/Total:\s*(\d+)\s*tarefas/);
-    document.getElementById('stat-hoje').textContent = m ? m[1] : '0';
-  }).catch(function(){ document.getElementById('stat-hoje').textContent='—'; });
-</script>
-{% endblock %}

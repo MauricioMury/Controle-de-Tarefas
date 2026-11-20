@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import re
 import sqlite3
@@ -88,6 +88,120 @@ def _ensure_v5_etapas_tables(cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS ix_historico_etapa_acao ON historico_etapa (acao)')
 
 
+def _hora_inicio_obrigatoria(cursor):
+    for coluna in cursor.execute('PRAGMA table_info(tarefa)').fetchall():
+        if coluna[1] == 'hora_inicio':
+            return bool(coluna[3])
+    return False
+
+
+def _contar_problemas_fk(cursor):
+    return len(cursor.execute('PRAGMA foreign_key_check').fetchall())
+
+
+def _tornar_hora_inicio_opcional(con):
+    """Reconstroi a tabela tarefa sem o NOT NULL de hora_inicio (SQLite nao altera restricao).
+
+    Parte do DDL gravado no proprio banco, porque os bancos antigos tem DDL diferentes.
+    Idempotente: nao faz nada se hora_inicio ja aceita vazio.
+    """
+    cur = con.cursor()
+    if not _table_exists(cur, 'tarefa') or not _hora_inicio_obrigatoria(cur):
+        return
+
+    ddl = cur.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tarefa'").fetchone()[0]
+    novo_ddl, trocas = re.subn(r'(\bhora_inicio\s+TIME)\s+NOT\s+NULL', r'\1', ddl, count=1, flags=re.IGNORECASE)
+    if trocas != 1:
+        raise RuntimeError('Migracao data_inicio: hora_inicio NOT NULL nao encontrado no DDL da tabela tarefa.')
+    novo_ddl, trocas = re.subn(
+        r'^\s*CREATE\s+TABLE\s+["`\[]?tarefa["`\]]?', 'CREATE TABLE tarefa__nova', novo_ddl, count=1, flags=re.IGNORECASE
+    )
+    if trocas != 1:
+        raise RuntimeError('Migracao data_inicio: cabecalho CREATE TABLE tarefa nao reconhecido.')
+
+    colunas = ', '.join(f'"{coluna[1]}"' for coluna in cur.execute('PRAGMA table_info(tarefa)').fetchall())
+    indices = [
+        linha[0] for linha in cur.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tarefa' AND sql IS NOT NULL"
+        ).fetchall()
+    ]
+
+    con.commit()
+    cur.execute('PRAGMA foreign_keys=OFF')
+    try:
+        problemas_antes = _contar_problemas_fk(cur)
+        total_antes = cur.execute('SELECT COUNT(*) FROM tarefa').fetchone()[0]
+        cur.execute('BEGIN')
+        cur.execute(novo_ddl)
+        cur.execute(f'INSERT INTO tarefa__nova ({colunas}) SELECT {colunas} FROM tarefa')
+        cur.execute('DROP TABLE tarefa')
+        cur.execute('ALTER TABLE tarefa__nova RENAME TO tarefa')
+        for sql in indices:
+            cur.execute(sql)
+
+        total_depois = cur.execute('SELECT COUNT(*) FROM tarefa').fetchone()[0]
+        if total_depois != total_antes:
+            raise RuntimeError(f'Migracao data_inicio: {total_antes} tarefas antes e {total_depois} depois.')
+        if _contar_problemas_fk(cur) > problemas_antes:
+            raise RuntimeError('Migracao data_inicio: a reconstrucao gerou chaves estrangeiras invalidas.')
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        cur.execute('PRAGMA foreign_keys=ON')
+
+
+# Colunas de valor fixo da tarefa em que ja apareceu UTF-8 gravado duas vezes (ex.: "Conclu\u00c3\xadda").
+_COLUNAS_VALOR_FIXO_TAREFA = ('status', 'prioridade', 'recorrencia', 'categoria')
+_STATUS_TAREFA = ('Pendente', 'Concluída')
+
+
+def _desfazer_utf8_duplo(valor):
+    """Desfaz UTF-8 lido como Latin-1 e gravado de novo. Devolve None quando nao ha o que corrigir.
+
+    So mexe em texto com "\u00c3"/"\u00c2" que volta a ser UTF-8 valido; texto legitimo como "S\u00c3O" nao muda.
+    """
+    if not isinstance(valor, str):
+        return None
+    corrigido = valor
+    for _ in range(3):  # aceita o defeito repetido ate 3 vezes
+        if '\u00c3' not in corrigido and '\u00c2' not in corrigido:
+            break
+        try:
+            corrigido = corrigido.encode('latin-1').decode('utf-8')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+    return corrigido if corrigido != valor else None
+
+
+def _corrigir_textos_corrompidos(con):
+    """V5.1 (Etapa 5): corrige acentuacao corrompida nas colunas de valor fixo da tarefa. Idempotente."""
+    cur = con.cursor()
+    if not _table_exists(cur, 'tarefa'):
+        return
+    existentes = _column_names(cur, 'tarefa')
+    for coluna in (c for c in _COLUNAS_VALOR_FIXO_TAREFA if c in existentes):
+        linhas = cur.execute(
+            f"SELECT id, {coluna} FROM tarefa WHERE {coluna} LIKE '%\u00c3%' OR {coluna} LIKE '%\u00c2%'"
+        ).fetchall()
+        for tarefa_id, valor in linhas:
+            corrigido = _desfazer_utf8_duplo(valor)
+            if corrigido is not None:
+                cur.execute(f'UPDATE tarefa SET {coluna} = ? WHERE id = ?', (corrigido, tarefa_id))
+
+    if 'status' in existentes and 'data_realizado' in existentes:
+        cur.execute(
+            """
+            UPDATE tarefa
+               SET status = CASE WHEN data_realizado IS NOT NULL THEN ? ELSE ? END
+             WHERE status IS NULL OR status NOT IN (?, ?)
+            """,
+            (_STATUS_TAREFA[1], _STATUS_TAREFA[0], *_STATUS_TAREFA),
+        )
+    con.commit()
+
+
 def run_local_migrations(db_path):
     """Executa migracoes locais idempotentes para o MVP SQLite."""
     if not os.path.exists(db_path):
@@ -123,9 +237,11 @@ def run_local_migrations(db_path):
         if _table_exists(cur, 'tarefa'):
             _ensure_column(cur, 'tarefa', 'tenant_id', 'INTEGER')
             cur.execute('CREATE INDEX IF NOT EXISTS ix_tarefa_tenant_id ON tarefa (tenant_id)')
+            # V5.1: data de inicio escolhida pelo usuario (opcional).
+            _ensure_column(cur, 'tarefa', 'data_inicio', 'DATE')
 
         users = cur.execute('SELECT id, username, password, tenant_id FROM user').fetchall() if _table_exists(cur, 'user') else []
-        now = datetime.utcnow().isoformat(sep=' ', timespec='seconds')
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(sep=' ', timespec='seconds')
 
         if users:
             for user_id, username, password, tenant_id in users:
@@ -173,5 +289,11 @@ def run_local_migrations(db_path):
             _ensure_v5_etapas_tables(cur)
 
         con.commit()
+
+        # V5.1: a hora de inicio pertence a data de inicio e passa a ser opcional.
+        _tornar_hora_inicio_opcional(con)
+
+        # V5.1 (Etapa 5): status e recorrencia com acentuacao corrompida.
+        _corrigir_textos_corrompidos(con)
     finally:
         con.close()

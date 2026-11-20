@@ -19,10 +19,11 @@
             <div class="card-body">
                 <form method="POST" action="{{ url_for('cadastro_tarefa') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
                     {% if duplicate_id %}
                     <input type="hidden" name="duplicate_id" value="{{ duplicate_id }}">
                     <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> Você está duplicando uma tarefa. As etapas serão copiadas como criadas. Preencha a nova data e hora fim.
+                        <i class="bi bi-info-circle"></i> Você está duplicando uma tarefa. As etapas serão copiadas como criadas. Preencha a nova data meta e ajuste a data de início.
                     </div>
                     {% endif %}
                     <div class="alert alert-info">
@@ -45,26 +46,37 @@
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label for="data_meta" class="form-label">Data Meta *</label>
-                            <input type="date" class="form-control" id="data_meta" name="data_meta" required>
+                            <label for="data_inicio" class="form-label">Data de Início</label>
+                            <input type="date" class="form-control" id="data_inicio" name="data_inicio"
+                                value="{{ data_inicio if data_inicio else '' }}">
+                            <small class="form-text text-muted">Quando você começou ou vai começar. Opcional</small>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label for="data_realizado" class="form-label">Data Realizado</label>
-                            <input type="date" class="form-control" id="data_realizado" name="data_realizado">
-                            <small class="form-text text-muted">Preencha se já foi concluída</small>
+                            <label for="hora_inicio" class="form-label">Hora Início</label>
+                            <input type="time" class="form-control" id="hora_inicio" name="hora_inicio"
+                                value="{{ hora_inicio if hora_inicio else '' }}">
+                            <small class="form-text text-muted">Hora da data de início</small>
                         </div>
                     </div>
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label for="hora_inicio" class="form-label">Hora Início *</label>
-                            <input type="time" class="form-control" id="hora_inicio" name="hora_inicio"
-                                value="{{ hora_inicio if hora_inicio else '' }}" required>
+                            <label for="data_meta" class="form-label">Data Meta *</label>
+                            <input type="date" class="form-control" id="data_meta" name="data_meta" required>
+                            <small class="form-text text-muted">Quando você pretende terminar</small>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="data_realizado" class="form-label">Data Realizado</label>
+                            <input type="date" class="form-control" id="data_realizado" name="data_realizado">
+                            <small class="form-text text-muted">Preencha se já foi concluída</small>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="hora_fim" class="form-label">Hora Fim</label>
                             <input type="time" class="form-control" id="hora_fim" name="hora_fim">
-                            <small class="form-text text-muted">Opcional</small>
+                            <small class="form-text text-muted">Hora da data realizado</small>
                         </div>
                     </div>
 
@@ -127,7 +139,7 @@
 
 
                     <div class="form-actions justify-content-between">
-                        <a href="{{ url_for('lista_tarefas',
+                        <a href="{{ next_url or url_for('lista_tarefas',
                             categoria=filtros.categoria,
                             prioridade=filtros.prioridade,
                             status=filtros.status,

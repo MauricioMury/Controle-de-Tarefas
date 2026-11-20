@@ -157,8 +157,8 @@
                 <thead class="table-dark">
                     <tr>
                         <th>Tarefa</th>
-                        <th>Data</th>
-                        <th>Hora</th>
+                        <th>Meta</th>
+                        <th>Início / Fim</th>
                         <th>Prioridade</th>
                         <th>Categoria</th>
                         <th>Status</th>
@@ -180,11 +180,21 @@
                             {% endif %}
 
                         </td>
-                        <td>{{ tarefa.data_meta.strftime('%d/%m/%Y') }}</td>
                         <td>
-                            {{ tarefa.hora_inicio.strftime('%H:%M') }}
-                            -
-                            {{ tarefa.hora_fim.strftime('%H:%M') if tarefa.hora_fim else '' }}
+                            {{ tarefa.data_meta.strftime('%d/%m/%Y') }}
+                            {% if tarefa.created_at %}
+                            <div class="small text-muted" title="Data de criação">Criada {{ tarefa.created_at|data_sp('%d/%m/%Y') }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            {% if tarefa.data_inicio %}
+                            <div title="Data de início">Início {{ tarefa.data_inicio.strftime('%d/%m/%Y') }}{% if tarefa.hora_inicio %} {{ tarefa.hora_inicio.strftime('%H:%M') }}{% endif %}</div>
+                            {% elif tarefa.status != 'Concluída' %}
+                            <span class="badge bg-warning text-dark" title="Edite a tarefa para informar a data de início">Sem data de início</span>
+                            {% endif %}
+                            {% if tarefa.data_realizado %}
+                            <div class="text-muted" title="Data realizado">Fim {{ tarefa.data_realizado.strftime('%d/%m/%Y') }}{% if tarefa.hora_fim %} {{ tarefa.hora_fim.strftime('%H:%M') }}{% endif %}</div>
+                            {% endif %}
                         </td>
                         <td><span class="badge bg-{{ tarefa.get_prioridade_cor() }}">{{ tarefa.prioridade }}</span></td>
                         <td>
@@ -193,10 +203,13 @@
                             </span>
                         </td>
                         <td>
+                            {% set atraso = tarefa.dias_atraso(hoje) %}
                             {% if tarefa.status == 'Concluída' %}
                             <span class="badge bg-success">Concluída</span>
+                            {% if atraso %}<div class="small text-danger" title="Data realizado depois da meta">com {{ atraso }} dia{{ 's' if atraso != 1 }} de atraso</div>{% endif %}
                             {% else %}
                             <span class="badge bg-warning text-dark">Pendente</span>
+                            {% if atraso %}<div class="small text-danger" title="Meta já passou">atrasada há {{ atraso }} dia{{ 's' if atraso != 1 }}</div>{% endif %}
                             {% endif %}
                         </td>
                         <td class="task-progress-cell">

@@ -696,6 +696,41 @@ Decisoes adiadas para versao futura:
 
 ---
 
+## 10. Pos-Producao
+
+### 10.1 Release Inicial
+
+Status: [CONCLUIDO]
+
+Em 28/07/2026, o deploy inicial foi validado em producao para uso pessoal em `todastarefas.com.br`.
+
+Evidencias:
+
+- aplicacao carregou em producao apos configuracao do WSGI;
+- rota `/calendario` abriu com usuario autenticado;
+- calendario, menu lateral e cards de tarefas/prazos renderizaram com dados reais;
+- banco esperado em producao: `instance/tarefas.db`;
+- origem do conteudo de producao: `instance/tarefas-desenvolvimento.db` validado na V5;
+- ambiente esperado: `APP_ENV=Producao` e `SESSION_COOKIE_SECURE=True`.
+
+Decisao: SQLite esta aceito para o escopo atual de uso pessoal/baixo volume. PostgreSQL, pipeline de CI/CD e hardening de publicacao ampla ficam fora deste release inicial.
+
+### 10.2 Proxima Etapa Separada
+
+Status: [PENDENTE]
+
+Objetivo: tratar ajustes pos-producao sem reabrir a V5 concluida.
+
+Itens iniciais:
+
+- definir rotina de backup do `instance/tarefas.db` no servidor;
+- corrigir `DeprecationWarning` de `datetime.utcnow()` com datas timezone-aware;
+- revisar pequenos ajustes visuais observados no uso real;
+- validar novamente a suite local apos cada correcao;
+- manter alteracoes pequenas, rastreaveis e sem mudanca desnecessaria de arquitetura.
+
+---
+
 ## Historico de Versoes
 
 | Versao | Data | Destaques |
@@ -705,9 +740,10 @@ Decisoes adiadas para versao futura:
 | V3 | Fev 2026 | Categorias dinamicas, comentarios, filtros persistentes |
 | V4 | Mar 2026 | Tema dark/light, redesign completo, filtro de busca por texto |
 | V5 | Jul 2026 | Etapas de execucao implementadas, historico de etapas, progresso automatico e integracao com calendario |
+| V5.1 | Jul 2026 | Etapa pos-producao aberta para backup, warnings de data e ajustes visuais pequenos |
 
 ---
 
-**Ultima atualizacao:** 20/07/2026
-**Versao do documento:** 5.0
+**Ultima atualizacao:** 28/07/2026
+**Versao do documento:** 5.1
 **Mantido por:** Mauricio
