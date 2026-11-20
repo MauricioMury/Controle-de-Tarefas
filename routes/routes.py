@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 import json
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
@@ -38,6 +38,13 @@ TRANSICOES_STATUS_ETAPA = {
     STATUS_ETAPA_CONCLUIDA: set(),
 }
 
+# Brasil sem horario de verao desde 2019; offset fixo evita depender do pacote tzdata no Windows.
+FUSO_SAO_PAULO = timezone(timedelta(hours=-3), 'America/Sao_Paulo')
+
+OPCOES_POR_PAGINA = (5, 10, 20, 50, 100)
+POR_PAGINA_PADRAO = 10
+PARAMETROS_FILTRO_LISTA = ('categoria', 'prioridade', 'status', 'data', 'busca', 'per_page')
+
 
 def parse_notif_datetime(valor_str):
     """Converte datetime-local ('YYYY-MM-DDTHH:MM') para datetime."""
@@ -67,14 +74,22 @@ def parse_optional_time(valor_str):
 
 def get_filtros_ativos():
     """Captura filtros ativos da URL ou sessao."""
+    per_page = request.args.get('per_page', session.get('filtro_per_page', POR_PAGINA_PADRAO), type=int)
+    if per_page not in OPCOES_POR_PAGINA:
+        per_page = POR_PAGINA_PADRAO
+
+    page = request.args.get('page', session.get('filtro_page', 1), type=int)
+    if not page or page < 1:
+        page = 1
+
     filtros = {
         'categoria': request.args.get('categoria', session.get('filtro_categoria', '')),
         'prioridade': request.args.get('prioridade', session.get('filtro_prioridade', '')),
         'status': request.args.get('status', session.get('filtro_status', '')),
         'data': request.args.get('data', session.get('filtro_data', '')),
         'busca': request.args.get('busca', session.get('filtro_busca', '')),
-        'page': request.args.get('page', session.get('filtro_page', 1), type=int),
-        'per_page': request.args.get('per_page', session.get('filtro_per_page', 10), type=int),
+        'page': page,
+        'per_page': per_page,
     }
 
     session['filtro_categoria'] = filtros['categoria']
@@ -565,12 +580,42 @@ def alterar_status_etapa_route(etapa_id, novo_status, mensagem):
         return resposta_erro_etapa(f'Erro ao alterar status da etapa: {str(e)}', 500)
 
 
+def hoje_sao_paulo():
+    """Data atual em Sao Paulo (o servidor de producao roda em UTC)."""
+    return datetime.now(FUSO_SAO_PAULO).date()
+
+
+def indicadores_dashboard():
+    """Conta as tarefas do usuario para o Inicio, sem usar os filtros da sessao."""
+    def contar(condicao):
+        return func.coalesce(func.sum(case((condicao, 1), else_=0)), 0)
+
+    total, pendentes, concluidas, alta_prioridade, hoje = db.session.query(
+        func.count(Tarefa.id),
+        contar(Tarefa.status == 'Pendente'),
+        contar(Tarefa.status == 'Concluída'),
+        contar(Tarefa.prioridade == 'Muito Importante'),
+        contar(Tarefa.data_meta == hoje_sao_paulo()),
+    ).filter(
+        Tarefa.tenant_id == get_current_tenant_id(),
+        Tarefa.user_id == get_local_user_id(),
+    ).one()
+
+    return {
+        'total': total,
+        'pendentes': pendentes,
+        'concluidas': concluidas,
+        'alta_prioridade': alta_prioridade,
+        'hoje': hoje,
+    }
+
+
 def register_routes(app):
     @app.route('/')
     @login_required
     def index():
-        """Dashboard principal do MVP local."""
-        return render_template('index.html')
+        """Dashboard principal: indicadores independentes dos filtros de Minhas Tarefas."""
+        return render_template('index.html', indicadores=indicadores_dashboard())
 
     @app.route('/categorias')
     @login_required
@@ -718,8 +763,14 @@ def register_routes(app):
         """Lista de tarefas com filtros e paginacao."""
         if request.args.get('limpar'):
             limpar_filtros_sessao()
-            per_page = request.args.get('per_page', 10, type=int)
+            per_page = request.args.get('per_page', POR_PAGINA_PADRAO, type=int)
+            if per_page not in OPCOES_POR_PAGINA:
+                per_page = POR_PAGINA_PADRAO
             return redirect(url_for('lista_tarefas', per_page=per_page))
+
+        # Filtro ou itens por pagina enviados sem pagina: recomeca na primeira.
+        if 'page' not in request.args and any(p in request.args for p in PARAMETROS_FILTRO_LISTA):
+            session['filtro_page'] = 1
 
         filtros = get_filtros_ativos()
         categorias = categorias_do_usuario()
@@ -751,14 +802,15 @@ def register_routes(app):
                 )
             )
 
-        tarefas_ordenadas = sorted(query.all(), key=lambda x: (x.data_meta, x.hora_inicio))
-        page = filtros['page']
         per_page = filtros['per_page']
-        total = len(tarefas_ordenadas)
-        start = (page - 1) * per_page
-        end = start + per_page
-        tarefas_paginadas = tarefas_ordenadas[start:end]
-        total_pages = (total + per_page - 1) // per_page
+        total = query.count()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(filtros['page'], total_pages)
+        session['filtro_page'] = page
+
+        tarefas_paginadas = query.order_by(
+            Tarefa.data_meta, Tarefa.hora_inicio, Tarefa.id
+        ).offset((page - 1) * per_page).limit(per_page).all()
         progressos_por_tarefa = calcular_progressos_tarefas(tarefas_paginadas)
 
         return render_template(

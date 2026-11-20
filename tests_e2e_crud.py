@@ -1,4 +1,5 @@
 from datetime import date, time
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,9 @@ from werkzeug.security import generate_password_hash
 
 from models import Categoria, Etapa, HistoricoEtapa, Tarefa, Tenant, User, db
 from routes import register_auth_routes, register_routes
+
+# Substitui app.APP_VERSION: os testes nao importam app.py (que exige .env).
+APP_VERSION = 'teste'
 
 
 def create_test_app(database_path):
@@ -38,6 +42,7 @@ def create_test_app(database_path):
             'local_username': current_user.username if current_user.is_authenticated else '',
             'current_user': current_user,
             'notifications_enabled': False,
+            'app_version': APP_VERSION,
         }
 
     register_auth_routes(test_app, lambda _usuario: None)
@@ -328,6 +333,243 @@ class V5EtapasCrudTestCase(unittest.TestCase):
         self.assertIn('Aplicar ordem da etapa', html)
         self.assertIn('Subir etapa', html)
         self.assertIn('Descer etapa', html)
+
+
+class ListaTarefasPaginacaoTestCase(unittest.TestCase):
+    """Etapa 1 do roadmap: itens por pagina em Minhas Tarefas."""
+
+    TOTAL_TAREFAS = 25
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        database_path = Path(self.temp_dir.name) / 'paginacao.db'
+        self.app = create_test_app(database_path)
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self._seed()
+        self.client = self.app.test_client()
+        response = self.client.post('/login', data={
+            'username': 'usuario_paginacao',
+            'password': 'SenhaForte!123',
+        })
+        self.assertEqual(302, response.status_code)
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+        self.app_context.pop()
+        self.temp_dir.cleanup()
+
+    def _seed(self):
+        tenant = Tenant(nome='Tenant Paginacao', slug='tenant-paginacao')
+        db.session.add(tenant)
+        db.session.flush()
+        user = User(
+            username='usuario_paginacao',
+            password=generate_password_hash('SenhaForte!123'),
+            tenant_id=tenant.id,
+        )
+        db.session.add(user)
+        db.session.flush()
+        categoria = Categoria(nome='Casa', cor='warning', tenant_id=tenant.id, user_id=user.id)
+        db.session.add(categoria)
+        db.session.flush()
+
+        # Datas crescentes: a tarefa N fica na posicao N da lista ordenada.
+        for numero in range(1, self.TOTAL_TAREFAS + 1):
+            db.session.add(Tarefa(
+                tarefa=f'Paginada {numero:02d}',
+                data_meta=date(2026, 8, numero),
+                hora_inicio=time(9, 0),
+                prioridade='Normal',
+                recorrencia='Nao',
+                categoria_legado=categoria.nome,
+                categoria_id=categoria.id,
+                status='Pendente' if numero % 2 else 'Concluída',
+                tenant_id=tenant.id,
+                user_id=user.id,
+            ))
+        db.session.commit()
+
+    def _html(self, query_string):
+        response = self.client.get(f'/lista_tarefas?{query_string}')
+        self.assertEqual(200, response.status_code)
+        return response.get_data(as_text=True)
+
+    def test_trocar_itens_por_pagina_volta_para_primeira_pagina(self):
+        html = self._html('page=3&per_page=10')
+        self.assertIn('Paginada 21', html)
+        self.assertNotIn('Paginada 01', html)
+
+        # O formulario "Itens por pagina" nao envia page.
+        html = self._html('per_page=100')
+        for numero in (1, 13, 25):
+            self.assertIn(f'Paginada {numero:02d}', html)
+
+    def test_aplicar_filtro_volta_para_primeira_pagina(self):
+        self._html('page=3&per_page=5')
+
+        # Pendentes sao as impares: 13 tarefas, a primeira pagina comeca na 01.
+        html = self._html('status=Pendente&per_page=5')
+        self.assertIn('Paginada 01', html)
+        self.assertIn('Paginada 09', html)
+        self.assertNotIn('Paginada 11', html)
+
+    def test_pagina_alem_do_total_mostra_a_ultima(self):
+        html = self._html('page=99&per_page=10')
+        self.assertIn('Paginada 25', html)
+        self.assertNotIn('Paginada 20', html)
+
+    def test_itens_por_pagina_invalido_usa_padrao(self):
+        for valor in ('0', '-5', '7', 'abc', '100000'):
+            with self.subTest(per_page=valor):
+                html = self._html(f'page=1&per_page={valor}')
+                self.assertIn('Paginada 10', html)
+                self.assertNotIn('Paginada 11', html)
+
+    def test_pagina_mantida_ao_navegar_sem_parametros(self):
+        self._html('page=2&per_page=10')
+        html = self._html('')
+        self.assertIn('Paginada 11', html)
+        self.assertNotIn('Paginada 10', html)
+
+    def test_lista_vazia_nao_quebra(self):
+        html = self._html('busca=inexistente&per_page=10')
+        self.assertIn('Total: 0 tarefas', html)
+
+
+class DashboardIndicadoresTestCase(unittest.TestCase):
+    """Etapa 1, tarefa 1.2: Inicio independente dos filtros de Minhas Tarefas."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        database_path = Path(self.temp_dir.name) / 'dashboard.db'
+        self.app = create_test_app(database_path)
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        db.create_all()
+        self._seed()
+        self.client = self.app.test_client()
+        response = self.client.post('/login', data={
+            'username': 'usuario_dashboard',
+            'password': 'SenhaForte!123',
+        })
+        self.assertEqual(302, response.status_code)
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+        self.app_context.pop()
+        self.temp_dir.cleanup()
+
+    def _criar_usuario(self, slug):
+        tenant = Tenant(nome=f'Tenant {slug}', slug=slug)
+        db.session.add(tenant)
+        db.session.flush()
+        user = User(
+            username=f'usuario_{slug}',
+            password=generate_password_hash('SenhaForte!123'),
+            tenant_id=tenant.id,
+        )
+        db.session.add(user)
+        db.session.flush()
+        return tenant, user
+
+    def _criar_categoria(self, tenant, user, nome):
+        categoria = Categoria(nome=nome, cor='info', tenant_id=tenant.id, user_id=user.id)
+        db.session.add(categoria)
+        db.session.flush()
+        return categoria
+
+    def _criar_tarefa(self, tenant, user, categoria, status, prioridade='Normal', data_meta=date(2026, 1, 10)):
+        db.session.add(Tarefa(
+            tarefa=f'{categoria.nome} {status} {prioridade}',
+            data_meta=data_meta,
+            hora_inicio=time(9, 0),
+            prioridade=prioridade,
+            recorrencia='Nao',
+            categoria_legado=categoria.nome,
+            categoria_id=categoria.id,
+            status=status,
+            tenant_id=tenant.id,
+            user_id=user.id,
+        ))
+
+    def _seed(self):
+        from routes.routes import hoje_sao_paulo
+
+        tenant, user = self._criar_usuario('dashboard')
+        trabalho = self._criar_categoria(tenant, user, 'Trabalho')
+        casa = self._criar_categoria(tenant, user, 'Casa')
+
+        # 6 tarefas: 4 pendentes, 2 concluidas, 2 muito importantes, 1 com meta hoje.
+        self._criar_tarefa(tenant, user, trabalho, 'Pendente', 'Muito Importante')
+        self._criar_tarefa(tenant, user, trabalho, 'Pendente', data_meta=hoje_sao_paulo())
+        self._criar_tarefa(tenant, user, trabalho, 'Concluída')
+        self._criar_tarefa(tenant, user, casa, 'Pendente')
+        self._criar_tarefa(tenant, user, casa, 'Pendente', 'Muito Importante')
+        self._criar_tarefa(tenant, user, casa, 'Concluída')
+
+        # Tarefas de outro usuario nao entram nos indicadores.
+        outro_tenant, outro_user = self._criar_usuario('outro')
+        outra_categoria = self._criar_categoria(outro_tenant, outro_user, 'Trabalho')
+        for _ in range(3):
+            self._criar_tarefa(outro_tenant, outro_user, outra_categoria, 'Pendente', 'Muito Importante',
+                               data_meta=hoje_sao_paulo())
+        db.session.commit()
+
+    def _indicadores(self):
+        response = self.client.get('/')
+        self.assertEqual(200, response.status_code)
+        html = response.get_data(as_text=True)
+        valores = {}
+        for chave in ('total', 'pendente', 'concluida', 'importante', 'hoje'):
+            match = re.search(rf'id="stat-{chave}">\s*(\d+)\s*<', html)
+            self.assertIsNotNone(match, f'indicador stat-{chave} ausente')
+            valores[chave] = int(match.group(1))
+        return valores, html
+
+    def test_indicadores_contam_todas_as_tarefas_do_usuario(self):
+        valores, html = self._indicadores()
+        self.assertEqual(
+            {'total': 6, 'pendente': 4, 'concluida': 2, 'importante': 2, 'hoje': 1},
+            valores,
+        )
+        # Nao busca mais /lista_tarefas em segundo plano.
+        self.assertNotIn('fetch(', html)
+
+    def test_filtros_de_minhas_tarefas_nao_afetam_o_inicio(self):
+        self.client.get('/lista_tarefas?categoria=Casa&status=Concluída&prioridade=Normal&per_page=5')
+        valores, _html = self._indicadores()
+        self.assertEqual(6, valores['total'])
+        self.assertEqual(4, valores['pendente'])
+
+    def test_inicio_nao_altera_os_filtros_de_minhas_tarefas(self):
+        self.client.get('/lista_tarefas?categoria=Casa&status=Pendente&per_page=20&page=1')
+        with self.client.session_transaction() as sessao:
+            antes = {k: v for k, v in sessao.items() if k.startswith('filtro_')}
+
+        self._indicadores()
+
+        with self.client.session_transaction() as sessao:
+            depois = {k: v for k, v in sessao.items() if k.startswith('filtro_')}
+        self.assertEqual(antes, depois)
+        self.assertEqual('Casa', depois['filtro_categoria'])
+
+    def test_hoje_usa_data_de_sao_paulo(self):
+        from datetime import datetime as dt, timezone as tz
+        from unittest import mock
+
+        import routes.routes as rotas
+
+        # 2026-11-20 01:30 UTC = 2026-11-19 22:30 em Sao Paulo.
+        instante_utc = dt(2026, 11, 20, 1, 30, tzinfo=tz.utc)
+        with mock.patch.object(rotas, 'datetime', wraps=dt) as falso:
+            falso.now.side_effect = lambda fuso=None: instante_utc.astimezone(fuso)
+            self.assertEqual(date(2026, 11, 19), rotas.hoje_sao_paulo())
 
 
 if __name__ == '__main__':

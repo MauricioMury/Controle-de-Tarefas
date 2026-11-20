@@ -14,6 +14,9 @@ from routes import register_auth_routes, register_routes
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
+# Versao semantica da aplicacao. Atualizar junto com versoestarefas.md a cada release.
+APP_VERSION = '5.0.1'
+
 
 @event.listens_for(Engine, 'connect')
 def enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
@@ -76,6 +79,7 @@ def inject_mvp_context():
         'local_username': current_user.username if current_user.is_authenticated else '',
         'current_user': current_user,
         'notifications_enabled': False,
+        'app_version': APP_VERSION,
     }
 
 

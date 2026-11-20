@@ -191,3 +191,56 @@ Arquivos uteis:
 - As configuracoes sensiveis devem ficar em `.env`, nunca hardcoded no codigo.
 - Antes de mudar regras de notificacao, validar tambem `notificacoes.py` e os campos correspondentes em `models.py`.
 - Rotas de etapa devem sempre validar `tenant_id`, `user_id` e a tarefa dona para evitar IDOR.
+
+# Github
+git status --short --branch
+git switch -c Desenvolvimento
+.\.venv\Scripts\python.exe -m unittest tests_e2e_crud tests_e2e_security tests_e2e_visual
+git add -A
+git status --short
+git diff --cached --name-only
+git commit -m "Implementa V5 de etapas e validacoes locais"
+git push -u origin Desenvolvimento
+
+git fetch origin
+git branch --show-current
+git switch -c Desenvolvimento --track origin/Desenvolvimento
+
+# Colocar em produção
+- Plano Seguro
+- Fazer merge do PR Desenvolvimento -> main.
+- No PythonAnywhere, clonar/puxar a main.
+git clone -b main https://github.com/MauricioMury/Controle-de-Tarefas.git Controle-de-Tarefas
+- Criar virtualenv.
+- Instalar requirements.txt.
+- Criar .env manual no servidor.
+- Inicializar/migrar SQLite.
+- Configurar WSGI.
+- Configurar /static/.
+- Reload da Web App.
+
+## Resumo Github - 28/07/2026
+- Implementa telas e fluxo V5 de etapas vinculadas a tarefas.
+- Adiciona histórico, progresso, duplicação e ordenação de etapas.
+- Inclui validações locais de CRUD, segurança e renderização visual.
+
+## Validação
+- `python tests_e2e_crud.py` - 5 testes OK
+- `python tests_e2e_security.py` - 4 testes OK
+- `python tests_e2e_visual.py` - 2 testes OK
+
+## Observações
+- Foram observados `DeprecationWarning` relacionados a `datetime.utcnow()`, sem falha nos testes.
+
+## Release de producao - 28/07/2026
+- Deploy inicial validado em producao para uso pessoal em `todastarefas.com.br`.
+- Tela `/calendario` validada manualmente apos reload da Web App.
+- Banco de producao esperado: `instance/tarefas.db`, criado a partir do conteudo validado de `instance/tarefas-desenvolvimento.db`.
+- Ambiente de producao esperado: `APP_ENV=Producao` e `SESSION_COOKIE_SECURE=True`.
+- Escopo aceito: uso pessoal/baixo volume com SQLite.
+
+# Proximos passos pos-producao
+- Criar backup periodico do `instance/tarefas.db` no servidor.
+- Corrigir `DeprecationWarning` relacionados a `datetime.utcnow()` usando datas timezone-aware.
+- Revisar pequenos ajustes visuais observados no uso real, sem alterar regra de negocio.
+- Manter qualquer melhoria pos-producao em etapa separada da V5 concluida.
