@@ -442,10 +442,11 @@ class NavegacaoRetornoTestCase(unittest.TestCase):
     def test_erro_de_validacao_na_edicao_renderiza_a_tela(self):
         self._login()
         response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-20', data_realizado='2026-07-20',
             hora_inicio='10:00', hora_fim='09:00', next=self.CALENDARIO))
         self.assertEqual(200, response.status_code)
         html = response.get_data(as_text=True)
-        self.assertIn('A hora de fim deve ser posterior', html)
+        self.assertIn('No mesmo dia, a hora de fim deve ser posterior', html)
         self.assertIn('name="next"', html)
 
 
@@ -684,6 +685,493 @@ class DashboardIndicadoresTestCase(unittest.TestCase):
         with mock.patch.object(rotas, 'datetime', wraps=dt) as falso:
             falso.now.side_effect = lambda fuso=None: instante_utc.astimezone(fuso)
             self.assertEqual(date(2026, 11, 19), rotas.hoje_sao_paulo())
+
+
+class CriadaEmTestCase(unittest.TestCase):
+    """Etapa 3, Tarefa 3.1: data de criacao exibida no horario de Sao Paulo."""
+
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+
+    def _definir_criacao(self, valor):
+        from datetime import datetime
+        tarefa = db.session.get(Tarefa, self.tarefa_id)
+        # 2026-11-20 02:30 UTC = 2026-11-19 23:30 em Sao Paulo.
+        tarefa.created_at = datetime(2026, 11, 20, 2, 30) if valor else None
+        db.session.commit()
+
+    def test_filtro_converte_utc_para_sao_paulo(self):
+        from datetime import datetime, timezone
+        from routes.routes import formatar_data_hora_sp
+        self.assertEqual('19/11/2026 23:30', formatar_data_hora_sp(datetime(2026, 11, 20, 2, 30)))
+        self.assertEqual('19/11/2026 23:30', formatar_data_hora_sp(
+            datetime(2026, 11, 20, 2, 30, tzinfo=timezone.utc)))
+        self.assertEqual('—', formatar_data_hora_sp(None))
+
+    def test_lista_tarefas_mostra_dia_de_sao_paulo(self):
+        self._definir_criacao(True)
+        self._login()
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('Criada 19/11/2026', html)
+        self.assertNotIn('Criada 20/11/2026', html)
+
+    def test_edicao_mostra_data_e_hora_de_sao_paulo(self):
+        self._definir_criacao(True)
+        self._login()
+        html = self.client.get(f'/editar_tarefa/{self.tarefa_id}').get_data(as_text=True)
+        self.assertIn('Criada em 19/11/2026 23:30', html)
+
+    def test_calendario_envia_criada_em(self):
+        self._definir_criacao(True)
+        self._login()
+        html = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('"criada_em": "19/11/2026 23:30"', html)
+
+    def test_sem_data_de_criacao_nao_quebra(self):
+        self._definir_criacao(False)
+        self._login()
+        self.assertEqual(200, self.client.get('/lista_tarefas').status_code)
+        self.assertIn('Criada em —', self.client.get(f'/editar_tarefa/{self.tarefa_id}').get_data(as_text=True))
+        self.assertIn('"criada_em": ""', self.client.get('/calendario').get_data(as_text=True))
+
+    def test_duplicar_gera_nova_data_de_criacao(self):
+        self._definir_criacao(True)
+        self._login()
+        original = db.session.get(Tarefa, self.tarefa_id)
+        self.client.post('/cadastro_tarefa', data={
+            'tarefa': original.tarefa + ' copia',
+            'comentario': '',
+            'data_meta': '2026-07-27',
+            'data_realizado': '',
+            'hora_inicio': '09:00',
+            'hora_fim': '',
+            'prioridade': 'Normal',
+            'recorrencia': 'Nao',
+            'categoria_id': original.categoria_id,
+            'duplicate_id': self.tarefa_id,
+        })
+        copia = Tarefa.query.filter(Tarefa.id != self.tarefa_id).order_by(Tarefa.id.desc()).first()
+        self.assertIsNotNone(copia)
+        self.assertIsNotNone(copia.created_at)
+        self.assertNotEqual(original.created_at, copia.created_at)
+
+
+class DataInicioTestCase(unittest.TestCase):
+    """Etapa 3, Tarefa 3.2: data de inicio e horas opcionais (cada hora pertence a sua data)."""
+
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+    _form_tarefa = NavegacaoRetornoTestCase._form_tarefa
+
+    def _tarefa(self, tarefa_id=None):
+        db.session.expire_all()
+        return db.session.get(Tarefa, tarefa_id or self.tarefa_id)
+
+    def test_cadastro_sem_data_de_inicio_e_sem_hora(self):
+        self._login()
+        response = self.client.post('/cadastro_tarefa', data=self._form_tarefa(
+            tarefa='Sem inicio', hora_inicio='', data_inicio=''))
+        self.assertEqual(302, response.status_code)
+        nova = Tarefa.query.filter_by(tarefa='Sem inicio').one()
+        self.assertIsNone(nova.data_inicio)
+        self.assertIsNone(nova.hora_inicio)
+
+    def test_cadastro_com_data_e_hora_de_inicio(self):
+        self._login()
+        self.client.post('/cadastro_tarefa', data=self._form_tarefa(
+            tarefa='Com inicio', data_inicio='2026-07-18', hora_inicio='08:15'))
+        nova = Tarefa.query.filter_by(tarefa='Com inicio').one()
+        self.assertEqual(date(2026, 7, 18), nova.data_inicio)
+        self.assertEqual(time(8, 15), nova.hora_inicio)
+
+    def test_inicio_depois_da_meta_e_recusado(self):
+        # Mauricio: se nao comecou ate a meta, a meta deve ser adiada.
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-25'))
+        self.assertEqual(200, response.status_code)
+        self.assertIn('não pode ser posterior à data meta', response.get_data(as_text=True))
+        self.assertIsNone(self._tarefa().data_inicio)
+
+    def test_inicio_no_dia_da_meta_e_aceito(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-20'))
+        self.assertEqual(302, response.status_code)
+        self.assertEqual(date(2026, 7, 20), self._tarefa().data_inicio)
+
+    def test_arrastar_meta_para_antes_do_inicio_e_recusado(self):
+        tarefa = self._tarefa()
+        tarefa.data_inicio = date(2026, 7, 18)
+        db.session.commit()
+        self._login()
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_meta': '2026-07-17'})
+        self.assertEqual(400, response.status_code)
+        self.assertIn('antes da data de início', response.get_json()['erro'])
+        self.assertEqual(date(2026, 7, 20), self._tarefa().data_meta)
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_meta': '2026-07-18'})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(date(2026, 7, 18), self._tarefa().data_meta)
+
+    def test_realizado_antes_do_inicio_e_recusado(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-20', data_realizado='2026-07-19'))
+        self.assertEqual(200, response.status_code)
+        self.assertIn('não pode ser anterior à data de início', response.get_data(as_text=True))
+        self.assertIsNone(self._tarefa().data_realizado)
+
+    def test_hora_fim_menor_em_outro_dia_e_aceita(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-18', hora_inicio='15:00',
+            data_realizado='2026-07-20', hora_fim='10:00'))
+        self.assertEqual(302, response.status_code)
+        tarefa = self._tarefa()
+        self.assertEqual(time(10, 0), tarefa.hora_fim)
+        self.assertEqual('Concluída', tarefa.status)
+
+    def test_hora_fim_menor_no_mesmo_dia_e_recusada(self):
+        self._login()
+        response = self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(
+            data_inicio='2026-07-20', hora_inicio='15:00',
+            data_realizado='2026-07-20', hora_fim='10:00'))
+        self.assertEqual(200, response.status_code)
+        self.assertIn('No mesmo dia, a hora de fim deve ser posterior', response.get_data(as_text=True))
+
+    def test_tarefa_antiga_sem_inicio_oculta_a_hora_e_avisa(self):
+        # Tarefa da base: hora 09:00 gravada quando a hora era do dia da meta.
+        self._login()
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('Sem data de início', html)
+        self.assertNotIn('09:00', html)
+        html = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('"data_inicio": ""', html)
+        self.assertIn('"hora_inicio": ""', html)
+        edicao = self.client.get(f'/editar_tarefa/{self.tarefa_id}').get_data(as_text=True)
+        self.assertIn('id="aviso-sem-inicio"', edicao)
+        # Na edicao a hora antiga vem preenchida para conferencia.
+        self.assertIn('value="09:00"', edicao)
+
+    def test_editar_sem_mexer_preserva_a_hora_antiga(self):
+        self._login()
+        self.client.post(f'/editar_tarefa/{self.tarefa_id}', data=self._form_tarefa(tarefa='Renomeada'))
+        tarefa = self._tarefa()
+        self.assertEqual('Renomeada', tarefa.tarefa)
+        self.assertEqual(time(9, 0), tarefa.hora_inicio)
+        self.assertIsNone(tarefa.data_inicio)
+
+    def test_com_inicio_mostra_data_e_hora(self):
+        tarefa = self._tarefa()
+        tarefa.data_inicio = date(2026, 7, 18)
+        db.session.commit()
+        self._login()
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('Início 18/07/2026 09:00', html)
+        self.assertNotIn('Sem data de início', html)
+        cal = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('"data_inicio": "2026-07-18"', cal)
+        self.assertIn('"hora_inicio": "09:00"', cal)
+
+    def test_concluir_usa_data_e_hora_de_sao_paulo(self):
+        from datetime import datetime as dt, timezone as tz
+        from unittest import mock
+        import routes.routes as rotas
+
+        self._login()
+        # 2026-11-20 01:30 UTC = 2026-11-19 22:30 em Sao Paulo.
+        instante_utc = dt(2026, 11, 20, 1, 30, 45, tzinfo=tz.utc)
+        with mock.patch.object(rotas, 'datetime', wraps=dt) as falso:
+            falso.now.side_effect = lambda fuso=None: instante_utc.astimezone(fuso)
+            self.client.post(f'/marcar_concluida/{self.tarefa_id}')
+        tarefa = self._tarefa()
+        self.assertEqual(date(2026, 11, 19), tarefa.data_realizado)
+        self.assertEqual(time(22, 30), tarefa.hora_fim)
+        self.assertEqual('Concluída', tarefa.status)
+
+    def test_concluir_preserva_hora_fim_existente(self):
+        tarefa = self._tarefa()
+        tarefa.hora_fim = time(17, 0)
+        db.session.commit()
+        self._login()
+        self.client.post(f'/marcar_concluida/{self.tarefa_id}')
+        self.assertEqual(time(17, 0), self._tarefa().hora_fim)
+
+    def test_duplicar_copia_inicio_e_nao_copia_realizado(self):
+        tarefa = self._tarefa()
+        tarefa.data_inicio = date(2026, 7, 18)
+        tarefa.data_realizado = date(2026, 7, 21)
+        tarefa.hora_fim = time(18, 0)
+        tarefa.status = 'Concluída'
+        db.session.commit()
+        self._login()
+        location = self.client.get(f'/duplicar_tarefa/{self.tarefa_id}').headers['Location']
+        self.assertIn('data_inicio=2026-07-18', location)
+        self.assertIn('hora_inicio=09:00', location)
+        self.assertNotIn('data_realizado', location)
+        self.assertNotIn('hora_fim', location)
+        html = self.client.get(location).get_data(as_text=True)
+        self.assertIn('value="2026-07-18"', html)
+
+    def test_ordem_no_mesmo_dia_sem_hora_por_ultimo(self):
+        self._login()
+        self.client.post('/cadastro_tarefa', data=self._form_tarefa(tarefa='ZZ sem hora', hora_inicio=''))
+        self.client.post('/cadastro_tarefa', data=self._form_tarefa(tarefa='AA cedo', hora_inicio='07:00'))
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertLess(html.index('AA cedo'), html.index('Implantar novo servidor'))
+        self.assertLess(html.index('Implantar novo servidor'), html.index('ZZ sem hora'))
+
+
+class MigracaoDataInicioTestCase(unittest.TestCase):
+    """Etapa 3, Tarefa 3.2: migracao de um banco com o DDL antigo (hora_inicio NOT NULL)."""
+
+    DDL_TAREFA_ANTIGA = (
+        'CREATE TABLE tarefa (\n'
+        '    id INTEGER NOT NULL,\n'
+        '    tarefa VARCHAR(200) NOT NULL,\n'
+        '    comentario TEXT,\n'
+        '    data_meta DATE NOT NULL,\n'
+        '    data_realizado DATE,\n'
+        '    hora_inicio TIME NOT NULL,\n'
+        '    hora_fim TIME,\n'
+        '    prioridade VARCHAR(20) NOT NULL,\n'
+        '    recorrencia VARCHAR(50) NOT NULL,\n'
+        '    categoria VARCHAR(50) NOT NULL,\n'
+        '    categoria_id INTEGER NOT NULL,\n'
+        '    status VARCHAR(20),\n'
+        '    user_id INTEGER NOT NULL,\n'
+        '    created_at DATETIME,\n'
+        '    notif_datetime_1 DATETIME,\n'
+        '    notif_email_enviada_1 BOOLEAN NOT NULL DEFAULT 0,\n'
+        '    notif_datetime_2 DATETIME,\n'
+        '    notif_email_enviada_2 BOOLEAN NOT NULL DEFAULT 0,\n'
+        '    notif_whatsapp_enviada_1 BOOLEAN NOT NULL DEFAULT 0,\n'
+        '    notif_whatsapp_enviada_2 BOOLEAN NOT NULL DEFAULT 0, tenant_id INTEGER,\n'
+        '    PRIMARY KEY (id),\n'
+        '    FOREIGN KEY(user_id) REFERENCES user (id),\n'
+        '    FOREIGN KEY(categoria_id) REFERENCES categoria (id)\n'
+        ');\n'
+    )
+
+    def setUp(self):
+        import sqlite3
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = str(Path(self.temp_dir.name) / 'antigo.db')
+        con = sqlite3.connect(self.db_path)
+        con.executescript(
+            'CREATE TABLE user (id INTEGER PRIMARY KEY, username VARCHAR(80), password VARCHAR(200));\n'
+            'CREATE TABLE categoria (id INTEGER PRIMARY KEY, nome VARCHAR(50), cor VARCHAR(20), user_id INTEGER);\n'
+            + self.DDL_TAREFA_ANTIGA +
+            'CREATE INDEX ix_tarefa_categoria_id ON tarefa (categoria_id);\n'
+            "INSERT INTO user VALUES (1, 'mauricio', 'scrypt:hash');\n"
+            "INSERT INTO categoria VALUES (1, 'Trabalho', 'info', 1);\n"
+            'INSERT INTO tarefa (id, tarefa, data_meta, data_realizado, hora_inicio, hora_fim, prioridade,\n'
+            '                    recorrencia, categoria, categoria_id, status, user_id, created_at)\n'
+            "VALUES (7, 'Antiga', '2026-05-20', '2026-05-21', '09:00:00.000000', '18:00:00.000000', 'Normal',\n"
+            "        'Nao', 'Trabalho', 1, 'Concluída', 1, '2026-05-01 12:00:00');\n"
+        )
+        con.commit()
+        con.close()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _info(self):
+        import sqlite3
+        con = sqlite3.connect(self.db_path)
+        try:
+            colunas = {c[1]: c[3] for c in con.execute('PRAGMA table_info(tarefa)')}
+            linhas = con.execute(
+                'SELECT id, tarefa, hora_inicio, hora_fim, data_inicio, tenant_id FROM tarefa'
+            ).fetchall()
+            indices = {
+                r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='tarefa'")
+            }
+            etapa_fks = {r[2] for r in con.execute('PRAGMA foreign_key_list(etapa)')}
+            integridade = con.execute('PRAGMA integrity_check').fetchone()[0]
+            return colunas, linhas, indices, etapa_fks, integridade
+        finally:
+            con.close()
+
+    def test_migracao_torna_hora_opcional_e_preserva_dados(self):
+        from local_migrations import run_local_migrations
+        run_local_migrations(self.db_path)
+        colunas, linhas, indices, etapa_fks, integridade = self._info()
+        self.assertEqual(0, colunas['hora_inicio'])
+        self.assertIn('data_inicio', colunas)
+        self.assertEqual(1, len(linhas))
+        id_, nome, hora_inicio, hora_fim, data_inicio, tenant_id = linhas[0]
+        self.assertEqual(
+            (7, 'Antiga', '09:00:00.000000', '18:00:00.000000', None),
+            (id_, nome, hora_inicio, hora_fim, data_inicio),
+        )
+        self.assertIsNotNone(tenant_id)
+        self.assertIn('ix_tarefa_categoria_id', indices)
+        self.assertIn('ix_tarefa_tenant_id', indices)
+        self.assertIn('tarefa', etapa_fks)
+        self.assertEqual('ok', integridade)
+
+    def test_migracao_idempotente(self):
+        from local_migrations import run_local_migrations
+        run_local_migrations(self.db_path)
+        primeira = self._info()
+        run_local_migrations(self.db_path)
+        self.assertEqual(primeira, self._info())
+
+    def test_aceita_tarefa_sem_hora_depois_da_migracao(self):
+        import sqlite3
+        from local_migrations import run_local_migrations
+        run_local_migrations(self.db_path)
+        con = sqlite3.connect(self.db_path)
+        try:
+            con.execute(
+                "INSERT INTO tarefa (tarefa, data_meta, prioridade, recorrencia, categoria, categoria_id, user_id) "
+                "VALUES ('Nova', '2026-12-01', 'Normal', 'Nao', 'Trabalho', 1, 1)"
+            )
+            con.commit()
+            self.assertEqual(2, con.execute('SELECT COUNT(*) FROM tarefa').fetchone()[0])
+        finally:
+            con.close()
+
+
+class AtrasoTestCase(unittest.TestCase):
+    """Etapa 3, Tarefa 3.3: dias de atraso em relacao a meta."""
+
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+
+    def _tarefa(self):
+        db.session.expire_all()
+        return db.session.get(Tarefa, self.tarefa_id)
+
+    def _concluir_em(self, realizado):
+        tarefa = self._tarefa()
+        tarefa.data_realizado = realizado
+        tarefa.status = 'Concluída'
+        db.session.commit()
+
+    def test_dias_atraso_do_modelo(self):
+        tarefa = self._tarefa()  # meta 2026-07-20, pendente
+        self.assertEqual(0, tarefa.dias_atraso())
+        self.assertEqual(0, tarefa.dias_atraso(date(2026, 7, 20)))
+        self.assertEqual(3, tarefa.dias_atraso(date(2026, 7, 23)))
+        tarefa.data_realizado = date(2026, 7, 19)
+        self.assertEqual(0, tarefa.dias_atraso(date(2026, 8, 1)))
+        tarefa.data_realizado = date(2026, 7, 21)
+        # Concluida: conta ate a data realizado, nao ate hoje.
+        self.assertEqual(1, tarefa.dias_atraso(date(2026, 8, 1)))
+
+    def test_lista_concluida_com_atraso(self):
+        self._concluir_em(date(2026, 7, 25))
+        self._login()
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('com 5 dias de atraso', html)
+
+    def test_lista_concluida_com_um_dia_de_atraso_no_singular(self):
+        self._concluir_em(date(2026, 7, 21))
+        self._login()
+        html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('com 1 dia de atraso', html)
+
+    def test_lista_concluida_no_prazo_sem_atraso(self):
+        self._concluir_em(date(2026, 7, 20))
+        self._login()
+        self.assertNotIn('de atraso', self.client.get('/lista_tarefas').get_data(as_text=True))
+
+    def test_lista_pendente_atrasada_pela_data_de_sao_paulo(self):
+        from unittest import mock
+        import routes.routes as rotas
+
+        self._login()
+        with mock.patch.object(rotas, 'hoje_sao_paulo', return_value=date(2026, 7, 27)):
+            html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertIn('atrasada há 7 dias', html)
+        with mock.patch.object(rotas, 'hoje_sao_paulo', return_value=date(2026, 7, 20)):
+            html = self.client.get('/lista_tarefas').get_data(as_text=True)
+        self.assertNotIn('atrasada há', html)
+
+    def test_calendario_recebe_datas_para_calcular_o_atraso(self):
+        self._concluir_em(date(2026, 7, 25))
+        self._login()
+        html = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('"data_meta": "2026-07-20"', html)
+        self.assertIn('"data_realizado": "2026-07-25"', html)
+        self.assertIn('de atraso', html)
+
+
+class VerPorCalendarioTestCase(unittest.TestCase):
+    """Etapa 3, Tarefa 3.4: seletor "Ver por: Meta | Inicio | Criacao" no Calendario."""
+
+    setUp = V5EtapasCrudTestCase.setUp
+    tearDown = V5EtapasCrudTestCase.tearDown
+    _seed_base_data = V5EtapasCrudTestCase._seed_base_data
+    _login = V5EtapasCrudTestCase._login
+
+    def _tarefa(self):
+        db.session.expire_all()
+        return db.session.get(Tarefa, self.tarefa_id)
+
+    def test_calendario_tem_o_seletor_ver_por(self):
+        self._login()
+        html = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('id="filtroVerPor"', html)
+        for valor in ('meta', 'inicio', 'criacao'):
+            self.assertIn(f'<option value="{valor}">', html)
+        self.assertIn("['ver', 'filtroVerPor']", html)
+
+    def test_data_de_criacao_no_dia_de_sao_paulo(self):
+        from datetime import datetime
+        tarefa = self._tarefa()
+        tarefa.created_at = datetime(2026, 11, 20, 2, 30)  # 19/11 23:30 em Sao Paulo
+        db.session.commit()
+        self._login()
+        html = self.client.get('/calendario').get_data(as_text=True)
+        self.assertIn('"data_criacao": "2026-11-19"', html)
+
+    def test_arrastar_no_modo_inicio_muda_so_a_data_de_inicio(self):
+        self._login()
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_inicio': '2026-07-15'})
+        self.assertEqual(200, response.status_code)
+        tarefa = self._tarefa()
+        self.assertEqual(date(2026, 7, 15), tarefa.data_inicio)
+        self.assertEqual(date(2026, 7, 20), tarefa.data_meta)
+
+    def test_arrastar_inicio_para_o_dia_da_meta_e_aceito(self):
+        self._login()
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_inicio': '2026-07-20'})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(date(2026, 7, 20), self._tarefa().data_inicio)
+
+    def test_arrastar_inicio_para_depois_da_meta_e_recusado(self):
+        self._login()
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_inicio': '2026-07-21'})
+        self.assertEqual(400, response.status_code)
+        self.assertIn('Adie a meta', response.get_json()['erro'])
+        self.assertIsNone(self._tarefa().data_inicio)
+
+    def test_arrastar_inicio_para_depois_do_realizado_e_recusado(self):
+        tarefa = self._tarefa()
+        tarefa.data_realizado = date(2026, 7, 18)
+        tarefa.status = 'Concluída'
+        db.session.commit()
+        self._login()
+        response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_inicio': '2026-07-19'})
+        self.assertEqual(400, response.status_code)
+        self.assertIn('data realizado', response.get_json()['erro'])
+
+    def test_arrastar_inicio_com_data_invalida(self):
+        self._login()
+        for valor in ('', 'ontem', '2026-13-01'):
+            with self.subTest(valor=valor):
+                response = self.client.post(f'/mover_tarefa/{self.tarefa_id}', json={'data_inicio': valor})
+                self.assertEqual(400, response.status_code)
+        self.assertIsNone(self._tarefa().data_inicio)
 
 
 if __name__ == '__main__':

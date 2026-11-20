@@ -62,9 +62,12 @@ class Tarefa(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tarefa = db.Column(db.String(200), nullable=False)
     comentario = db.Column(db.Text, nullable=True)
+    # Cada hora pertence a sua data: hora_inicio -> data_inicio, hora_fim -> data_realizado.
+    # A data meta nao tem hora. Horas antigas sem a data correspondente ficam gravadas, mas nao sao exibidas.
+    data_inicio = db.Column(db.Date, nullable=True)
     data_meta = db.Column(db.Date, nullable=False)
     data_realizado = db.Column(db.Date, nullable=True)
-    hora_inicio = db.Column(db.Time, nullable=False)
+    hora_inicio = db.Column(db.Time, nullable=True)
     hora_fim = db.Column(db.Time, nullable=True)
     prioridade = db.Column(db.String(20), nullable=False)
     recorrencia = db.Column(db.String(50), nullable=False)
@@ -92,6 +95,19 @@ class Tarefa(db.Model):
     notif_datetime_2 = db.Column(db.DateTime, nullable=True)
     notif_email_enviada_2 = db.Column(db.Boolean, default=False, nullable=False)
     notif_whatsapp_enviada_2 = db.Column(db.Boolean, default=False, nullable=False)
+
+    def dias_atraso(self, hoje=None):
+        """Dias de atraso em relacao a meta (0 se no prazo).
+
+        Concluida: data realizado - meta. Pendente: hoje - meta (exige `hoje`).
+        """
+        if self.data_realizado:
+            referencia = self.data_realizado
+        elif hoje is not None:
+            referencia = hoje
+        else:
+            return 0
+        return max(0, (referencia - self.data_meta).days)
 
     def get_prioridade_cor(self):
         cores = {

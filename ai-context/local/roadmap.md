@@ -39,7 +39,7 @@ Status permitidos: `PENDENTE`, `ANDAMENTO`, `CONCLUÍDO`.
 | 0 | Decisões iniciais | Evoluir este projeto; papel das datas; regras das notificações | CONCLUÍDO | — |
 | 1 | Minhas Tarefas: itens por página | Paginação correta e Início sem os filtros de Minhas Tarefas | CONCLUÍDO | 5.0.1 |
 | 2 | Navegação entre telas | Voltar à tela de origem após salvar e manter os filtros do Calendário | CONCLUÍDO | 5.0.2 |
-| 3 | Data de criação | Exibir "Criada em" e seletor "Ver por: Meta / Criação" no Calendário | PENDENTE | 5.1.0 (prevista) |
+| 3 | Datas da tarefa | "Criada em", data de início, atraso e seletor "Ver por: Meta / Início / Criação" no Calendário | CONCLUÍDO | 5.1.0 |
 | 4 | Notificações | Religar o cadastro de lembretes na tarefa e o disparo por e-mail e WhatsApp | PENDENTE | 5.2.0 (prevista) |
 | 5 | Qualidade e dados | Corrigir status com acentuação corrompida e o `DeprecationWarning` de `datetime.utcnow()` | PENDENTE | 5.2.1 (prevista) |
 
@@ -47,7 +47,16 @@ Status permitidos: `PENDENTE`, `ANDAMENTO`, `CONCLUÍDO`.
 
 - **Evoluir este projeto**, sem projeto novo nem troca de stack: Flask + Jinja2 + SQLite (Mauricio, 2026-11-12).
 - **Usuário único**: só Mauricio usa o sistema. Os outros 3 usuários do banco não exigem cuidado de multiusuário além do isolamento já existente.
-- Calendário com seletor **"Ver por: Meta | Criação"**; o cartão mostra as três datas nos dois modos (Mauricio, 2026-11-12).
+- Calendário com seletor **"Ver por: Meta | Criação"**; o cartão mostra as três datas nos dois modos (Mauricio, 2026-11-12). Ampliado em 2026-11-20 para **Meta | Início | Criação**.
+- **Datas da tarefa** (Mauricio, 2026-11-20): cada hora pertence à sua data.
+  - **Criação**: automática, com hora, não editável.
+  - **Início + Hora Início**: opcional, vazia no cadastro; quando Mauricio começou ou se agendou para começar. Sem data de início, a hora não é exibida.
+  - **Meta**: obrigatória, sem hora; data em que pretende acabar. Passou sem concluir → dias de atraso. A data de início não pode ser posterior à meta: se não começou até a meta, a meta deve ser adiada (vale também para o arrastar e soltar do Calendário).
+  - **Realizado + Hora Fim**: data e hora em que terminou. Hora fim só precisa ser posterior à hora início quando início e realizado forem o mesmo dia.
+  - O botão Concluir grava realizado = hoje (São Paulo) e hora fim = agora, se vazia.
+  - Duplicar copia início e hora início, limpa realizado e hora fim.
+  - Horas antigas (gravadas quando a hora era do dia da meta) ficam no banco e só aparecem quando a data correspondente existir.
+  - Etapas não mudam por enquanto ("vamos ver").
 - Notificações por tarefa: canal escolhido em cada tarefa (e-mail, WhatsApp ou ambos) e até dois lembretes (uso típico: um dia antes e no dia) (Mauricio, 2026-11-12).
 - Produção: PythonAnywhere, branch `main`, `APP_ENV=Producao`, `SESSION_COOKIE_SECURE=True`, banco `instance/tarefas.db`. Trabalho na branch `Desenvolvimento` → PR para `main`.
 - Local: `APP_ENV=Desenvolvimento`, banco `instance/tarefas-desenvolvimento.db` (em 2026-11-12, cópia do banco de produção: 4 usuários, 475 tarefas).
@@ -77,27 +86,9 @@ CONCLUÍDO em 2026-11-20 08:04 (versão 5.0.2). Evidências em `roadmap-historic
 
 ---
 
-## Etapa 3 — Data de criação
+## Etapa 3 — Datas da tarefa
 
-- Status: PENDENTE
-
-### Contexto (2026-11-12)
-
-- A coluna `tarefa.created_at` já existe e está preenchida nas 475 tarefas (desde 2026-02-01, gravada em UTC). Não há data nova a criar nem migração de dados.
-
-### Tarefa 3.1 — Exibir "Criada em"
-
-- Status: PENDENTE
-- Escopo: mostrar a data de criação (convertida de UTC para `America/Sao_Paulo`) no Calendário, em Minhas Tarefas e na edição. Somente leitura. A duplicação gera uma nova data de criação.
-- Testes: data exibida no fuso correto (tarefa criada às 23:30 em São Paulo aparece no dia certo, e não no dia seguinte em UTC).
-
-### Tarefa 3.2 — Seletor "Ver por: Meta | Criação" no Calendário
-
-- Status: PENDENTE
-- Escopo: no modo **Meta** (padrão, comportamento atual), a tarefa fica no dia da meta. No modo **Criação**, fica no dia em que foi criada. Nos dois modos o cartão mostra "Criada em", o status de agenda (Atrasada / Hoje / Faltam X dias, calculado pela Meta) e, se concluída, a data de conclusão no lugar do status de agenda. Etapas continuam pela data planejada.
-- Arrastar e soltar: no modo Meta continua mudando a Meta; no modo Criação fica desativado, porque a data de criação não deve ser alterada.
-- O modo escolhido é preservado junto com os filtros (Tarefa 2.2).
-- Testes: teste visual de Mauricio nos dois modos.
+CONCLUÍDO em 2026-11-20 10:41 (versão 5.1.0). Evidências em `roadmap-historico.md`.
 
 ---
 
@@ -124,6 +115,8 @@ CONCLUÍDO em 2026-11-20 08:04 (versão 5.0.2). Evidências em `roadmap-historic
 - Status: PENDENTE
 - Escopo: seção "Notificações" em `cadastro_tarefa.html` e `editar_tarefa.html` com o canal (E-mail / WhatsApp / Ambos) e os lembretes 1 e 2 (data e hora). Atalhos opcionais "1 dia antes" e "No dia" calculados a partir da Meta e da hora de início. Avisar na tela quando o canal escolhido não estiver configurado no perfil. Mudar a data de um lembrete reinicia o "enviado" daquele lembrete (já existe em `aplicar_dados_tarefa`). Duplicar copia o canal, mas não as datas de lembrete.
 - Corrige o efeito colateral de a edição apagar os lembretes.
+- Atalhos (decisão de Mauricio em 2026-11-20): como a Meta não tem hora, "1 dia antes" = véspera da Meta às **05:00** e "No dia" = dia da Meta às **05:00**. Mauricio pode alterar o horário no campo.
+- `notificacoes.py` monta o texto com `tarefa.hora_inicio.strftime(...)`; com a hora opcional (Tarefa 3.2), tratar hora vazia.
 - Testes: cadastro e edição gravam canal e lembretes; editar sem mexer nos lembretes os preserva; lembrete com data alterada volta a "não enviado".
 
 ### Tarefa 4.3 — Script de disparo
@@ -149,6 +142,7 @@ CONCLUÍDO em 2026-11-20 08:04 (versão 5.0.2). Evidências em `roadmap-historic
 ### Tarefa 5.1 — Status com acentuação corrompida
 
 - Status: PENDENTE
+- Ordem (Mauricio, 2026-11-20): fazer logo depois da Etapa 3, antes da Etapa 4. Encontrada de novo em 2026-11-20: o filtro Concluída mostra 429 de 430 concluídas (477 tarefas = 429 + 47 pendentes + 1 corrompida).
 - Contexto: no banco de produção há 1 tarefa com o status `Concluída` gravado com codificação corrompida (427 corretas, 47 Pendente). Ela não aparece no filtro "Concluída".
 - Escopo: migração idempotente em `local_migrations.py` normalizando o status; aplicar em produção com backup antes.
 

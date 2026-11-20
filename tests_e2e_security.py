@@ -202,6 +202,21 @@ class V5EtapasSecurityTestCase(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertIs(response.get_json()['ok'], False)
 
+    def test_usuario_nao_move_tarefa_de_outro_usuario(self):
+        tarefa_a_id, _etapa_a_id = self._ids_por_usuario('usuario_a')
+        meta_antes = db.session.get(Tarefa, tarefa_a_id).data_meta
+        self._login('usuario_b')
+
+        for payload in ({'data_meta': '2026-12-01'}, {'data_inicio': '2026-01-01'}):
+            with self.subTest(payload=payload):
+                response = self.client.post(f'/mover_tarefa/{tarefa_a_id}', json=payload)
+                self.assertEqual(404, response.status_code)
+
+        db.session.expire_all()
+        tarefa = db.session.get(Tarefa, tarefa_a_id)
+        self.assertEqual(meta_antes, tarefa.data_meta)
+        self.assertIsNone(tarefa.data_inicio)
+
     def test_calendario_nao_renderiza_etapas_de_outro_usuario(self):
         self._login('usuario_b')
 

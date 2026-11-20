@@ -21,6 +21,22 @@ Os detalhes de implementação e os testes de cada item ficam em `ai-context/loc
 
 ---
 
+## [5.1.0] — 2026-11-20
+
+### Adicionado
+
+- Data de criação da tarefa, no horário de São Paulo, em Minhas Tarefas, na edição e nos cartões do Calendário. (Etapa 3)
+- Data de início (opcional) com a hora de início; cada hora passa a pertencer à sua data: Hora Início à data de início e Hora Fim à data realizado. A data meta fica sem hora. Tarefas pendentes sem data de início mostram o aviso "Sem data de início". Migração automática: coluna `data_inicio` e `hora_inicio` opcional (reconstrução da tabela `tarefa`; fazer backup antes). (Etapa 3)
+- Atraso em relação à meta: "com X dias de atraso" nas tarefas concluídas depois da meta (Minhas Tarefas e Calendário) e "atrasada há X dias" nas pendentes em Minhas Tarefas. (Etapa 3)
+- Calendário: seletor "Ver por: Meta | Início | Criação", guardado na URL junto com os filtros. No modo Início, arrastar muda a data de início (sem passar da meta); no modo Criação, arrastar fica desativado. (Etapa 3)
+- A data de início não pode ser posterior à meta, nem no formulário nem ao arrastar no Calendário. (Etapa 3)
+
+### Corrigido
+
+- Concluir tarefa grava a data e a hora de São Paulo; antes, depois das 21:00 gravava o dia seguinte (UTC). (Etapa 3)
+
+---
+
 ## [5.0.2] — 2026-11-20
 
 ### Corrigido

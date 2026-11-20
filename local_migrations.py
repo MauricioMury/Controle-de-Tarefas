@@ -88,6 +88,70 @@ def _ensure_v5_etapas_tables(cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS ix_historico_etapa_acao ON historico_etapa (acao)')
 
 
+def _hora_inicio_obrigatoria(cursor):
+    for coluna in cursor.execute('PRAGMA table_info(tarefa)').fetchall():
+        if coluna[1] == 'hora_inicio':
+            return bool(coluna[3])
+    return False
+
+
+def _contar_problemas_fk(cursor):
+    return len(cursor.execute('PRAGMA foreign_key_check').fetchall())
+
+
+def _tornar_hora_inicio_opcional(con):
+    """Reconstroi a tabela tarefa sem o NOT NULL de hora_inicio (SQLite nao altera restricao).
+
+    Parte do DDL gravado no proprio banco, porque os bancos antigos tem DDL diferentes.
+    Idempotente: nao faz nada se hora_inicio ja aceita vazio.
+    """
+    cur = con.cursor()
+    if not _table_exists(cur, 'tarefa') or not _hora_inicio_obrigatoria(cur):
+        return
+
+    ddl = cur.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tarefa'").fetchone()[0]
+    novo_ddl, trocas = re.subn(r'(\bhora_inicio\s+TIME)\s+NOT\s+NULL', r'\1', ddl, count=1, flags=re.IGNORECASE)
+    if trocas != 1:
+        raise RuntimeError('Migracao data_inicio: hora_inicio NOT NULL nao encontrado no DDL da tabela tarefa.')
+    novo_ddl, trocas = re.subn(
+        r'^\s*CREATE\s+TABLE\s+["`\[]?tarefa["`\]]?', 'CREATE TABLE tarefa__nova', novo_ddl, count=1, flags=re.IGNORECASE
+    )
+    if trocas != 1:
+        raise RuntimeError('Migracao data_inicio: cabecalho CREATE TABLE tarefa nao reconhecido.')
+
+    colunas = ', '.join(f'"{coluna[1]}"' for coluna in cur.execute('PRAGMA table_info(tarefa)').fetchall())
+    indices = [
+        linha[0] for linha in cur.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tarefa' AND sql IS NOT NULL"
+        ).fetchall()
+    ]
+
+    con.commit()
+    cur.execute('PRAGMA foreign_keys=OFF')
+    try:
+        problemas_antes = _contar_problemas_fk(cur)
+        total_antes = cur.execute('SELECT COUNT(*) FROM tarefa').fetchone()[0]
+        cur.execute('BEGIN')
+        cur.execute(novo_ddl)
+        cur.execute(f'INSERT INTO tarefa__nova ({colunas}) SELECT {colunas} FROM tarefa')
+        cur.execute('DROP TABLE tarefa')
+        cur.execute('ALTER TABLE tarefa__nova RENAME TO tarefa')
+        for sql in indices:
+            cur.execute(sql)
+
+        total_depois = cur.execute('SELECT COUNT(*) FROM tarefa').fetchone()[0]
+        if total_depois != total_antes:
+            raise RuntimeError(f'Migracao data_inicio: {total_antes} tarefas antes e {total_depois} depois.')
+        if _contar_problemas_fk(cur) > problemas_antes:
+            raise RuntimeError('Migracao data_inicio: a reconstrucao gerou chaves estrangeiras invalidas.')
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        cur.execute('PRAGMA foreign_keys=ON')
+
+
 def run_local_migrations(db_path):
     """Executa migracoes locais idempotentes para o MVP SQLite."""
     if not os.path.exists(db_path):
@@ -123,6 +187,8 @@ def run_local_migrations(db_path):
         if _table_exists(cur, 'tarefa'):
             _ensure_column(cur, 'tarefa', 'tenant_id', 'INTEGER')
             cur.execute('CREATE INDEX IF NOT EXISTS ix_tarefa_tenant_id ON tarefa (tenant_id)')
+            # V5.1: data de inicio escolhida pelo usuario (opcional).
+            _ensure_column(cur, 'tarefa', 'data_inicio', 'DATE')
 
         users = cur.execute('SELECT id, username, password, tenant_id FROM user').fetchall() if _table_exists(cur, 'user') else []
         now = datetime.utcnow().isoformat(sep=' ', timespec='seconds')
@@ -173,5 +239,8 @@ def run_local_migrations(db_path):
             _ensure_v5_etapas_tables(cur)
 
         con.commit()
+
+        # V5.1: a hora de inicio pertence a data de inicio e passa a ser opcional.
+        _tornar_hora_inicio_opcional(con)
     finally:
         con.close()

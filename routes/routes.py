@@ -464,12 +464,21 @@ def dados_categoria_form():
 
 
 def dados_tarefa_form():
+    # Cada hora pertence a sua data: hora_inicio -> data_inicio, hora_fim -> data_realizado.
+    data_inicio = parse_optional_date(request.form.get('data_inicio'))
     data_realizado = parse_optional_date(request.form.get('data_realizado'))
-    hora_inicio = parse_time(request.form.get('hora_inicio'))
+    hora_inicio = parse_optional_time(request.form.get('hora_inicio'))
     hora_fim = parse_optional_time(request.form.get('hora_fim'))
 
-    if hora_fim and hora_fim <= hora_inicio:
-        raise ValueError('A hora de fim deve ser posterior à hora de início!')
+    data_meta = parse_date(request.form.get('data_meta'))
+
+    if data_inicio and data_inicio > data_meta:
+        raise ValueError('A data de início não pode ser posterior à data meta. Se não vai começar até a meta, adie a meta.')
+    if data_inicio and data_realizado and data_realizado < data_inicio:
+        raise ValueError('A data realizado não pode ser anterior à data de início!')
+    if (data_inicio and data_realizado == data_inicio
+            and hora_inicio and hora_fim and hora_fim <= hora_inicio):
+        raise ValueError('No mesmo dia, a hora de fim deve ser posterior à hora de início!')
 
     categoria = buscar_categoria_do_usuario(request.form.get('categoria_id', type=int))
     if not categoria:
@@ -478,7 +487,8 @@ def dados_tarefa_form():
     return {
         'tarefa': request.form.get('tarefa'),
         'comentario': request.form.get('comentario', ''),
-        'data_meta': parse_date(request.form.get('data_meta')),
+        'data_inicio': data_inicio,
+        'data_meta': data_meta,
         'data_realizado': data_realizado,
         'hora_inicio': hora_inicio,
         'hora_fim': hora_fim,
@@ -496,6 +506,7 @@ def montar_tarefa(dados):
     return Tarefa(
         tarefa=dados['tarefa'],
         comentario=dados['comentario'],
+        data_inicio=dados['data_inicio'],
         data_meta=dados['data_meta'],
         data_realizado=dados['data_realizado'],
         hora_inicio=dados['hora_inicio'],
@@ -520,6 +531,7 @@ def aplicar_dados_tarefa(tarefa, dados):
     categoria = dados['categoria']
     tarefa.tarefa = dados['tarefa']
     tarefa.comentario = dados['comentario']
+    tarefa.data_inicio = dados['data_inicio']
     tarefa.data_meta = dados['data_meta']
     tarefa.data_realizado = dados['data_realizado']
     tarefa.hora_inicio = dados['hora_inicio']
@@ -651,7 +663,24 @@ def indicadores_dashboard():
     }
 
 
+def para_sao_paulo(valor):
+    """Converte um datetime gravado em UTC (sem fuso, como no SQLite) para Sao Paulo."""
+    if valor is None:
+        return None
+    if valor.tzinfo is None:
+        valor = valor.replace(tzinfo=timezone.utc)
+    return valor.astimezone(FUSO_SAO_PAULO)
+
+
+def formatar_data_hora_sp(valor, formato='%d/%m/%Y %H:%M'):
+    """Filtro Jinja: data/hora UTC exibida no horario de Sao Paulo; vazio vira '—'."""
+    convertido = para_sao_paulo(valor)
+    return convertido.strftime(formato) if convertido else '—'
+
+
 def register_routes(app):
+    app.add_template_filter(formatar_data_hora_sp, 'data_sp')
+
     @app.route('/')
     @login_required
     def index():
@@ -792,6 +821,7 @@ def register_routes(app):
             duplicate_id=request.args.get('duplicate'),
             tarefa=request.args.get('tarefa', ''),
             comentario=request.args.get('comentario', ''),
+            data_inicio=request.args.get('data_inicio', ''),
             hora_inicio=request.args.get('hora_inicio', ''),
             prioridade=request.args.get('prioridade', ''),
             recorrencia=request.args.get('recorrencia', ''),
@@ -852,13 +882,14 @@ def register_routes(app):
         session['filtro_page'] = page
 
         tarefas_paginadas = query.order_by(
-            Tarefa.data_meta, Tarefa.hora_inicio, Tarefa.id
+            Tarefa.data_meta, Tarefa.hora_inicio.is_(None), Tarefa.hora_inicio, Tarefa.id
         ).offset((page - 1) * per_page).limit(per_page).all()
         progressos_por_tarefa = calcular_progressos_tarefas(tarefas_paginadas)
 
         return render_template(
             'lista_tarefas.html',
             tarefas=tarefas_paginadas,
+            hoje=hoje_sao_paulo(),
             progressos_por_tarefa=progressos_por_tarefa,
             categorias=categorias,
             page=page,
@@ -919,7 +950,8 @@ def register_routes(app):
             duplicate=id,
             tarefa=tarefa.tarefa,
             comentario=tarefa.comentario,
-            hora_inicio=tarefa.hora_inicio.strftime('%H:%M'),
+            data_inicio=tarefa.data_inicio.isoformat() if tarefa.data_inicio else '',
+            hora_inicio=tarefa.hora_inicio.strftime('%H:%M') if tarefa.hora_inicio else '',
             prioridade=tarefa.prioridade,
             recorrencia=tarefa.recorrencia,
             categoria_id=tarefa.categoria_id,
@@ -943,7 +975,11 @@ def register_routes(app):
         """Marcar tarefa como concluida."""
         tarefa = buscar_tarefa_ou_404(id)
         tarefa.status = 'Concluída'
-        tarefa.data_realizado = date.today()
+        # Data e hora de Sao Paulo: o servidor de producao roda em UTC.
+        agora = datetime.now(FUSO_SAO_PAULO)
+        tarefa.data_realizado = agora.date()
+        if not tarefa.hora_fim:
+            tarefa.hora_fim = agora.time().replace(second=0, microsecond=0)
         db.session.commit()
 
         flash('Tarefa marcada como concluída!', 'success')
@@ -1156,12 +1192,17 @@ def register_routes(app):
             'tarefa': t.tarefa,
             'comentario': t.comentario or '',
             'data_meta': t.data_meta.strftime('%Y-%m-%d'),
-            'hora_inicio': t.hora_inicio.strftime('%H:%M'),
-            'hora_fim': t.hora_fim.strftime('%H:%M') if t.hora_fim else '',
+            # Hora so com a data correspondente (horas antigas ficam ocultas).
+            'data_inicio': t.data_inicio.strftime('%Y-%m-%d') if t.data_inicio else '',
+            'hora_inicio': t.hora_inicio.strftime('%H:%M') if t.data_inicio and t.hora_inicio else '',
+            'data_realizado': t.data_realizado.strftime('%Y-%m-%d') if t.data_realizado else '',
+            'hora_fim': t.hora_fim.strftime('%H:%M') if t.data_realizado and t.hora_fim else '',
             'prioridade': t.prioridade,
             'categoria_id': t.categoria_id,
             'categoria': t.categoria.nome,
             'status': t.status,
+            'criada_em': formatar_data_hora_sp(t.created_at) if t.created_at else '',
+            'data_criacao': formatar_data_hora_sp(t.created_at, '%Y-%m-%d') if t.created_at else '',
         } for t in tarefas], ensure_ascii=False)
 
         etapas_json = json.dumps([{
@@ -1206,18 +1247,49 @@ def register_routes(app):
     @app.route('/mover_tarefa/<int:id>', methods=['POST'])
     @login_required
     def mover_tarefa(id):
-        """Move a data_meta de uma tarefa usado pelo drag and drop do calendario."""
+        """Arrastar e soltar do calendario: move a data_meta ou, em "Ver por: Inicio", a data_inicio."""
         tarefa = buscar_tarefa_ou_404(id)
         data = request.get_json() or {}
+
+        if 'data_inicio' in data:
+            try:
+                nova_data_inicio = parse_date(data.get('data_inicio') or '')
+            except ValueError:
+                return jsonify({'ok': False, 'erro': 'Formato de data inválido'}), 400
+            if nova_data_inicio > tarefa.data_meta:
+                return jsonify({
+                    'ok': False,
+                    'erro': 'O início não pode ficar depois da meta ({}). Adie a meta antes.'.format(
+                        tarefa.data_meta.strftime('%d/%m/%Y')),
+                }), 400
+            if tarefa.data_realizado and nova_data_inicio > tarefa.data_realizado:
+                return jsonify({
+                    'ok': False,
+                    'erro': 'O início não pode ficar depois da data realizado ({}).'.format(
+                        tarefa.data_realizado.strftime('%d/%m/%Y')),
+                }), 400
+            tarefa.data_inicio = nova_data_inicio
+            db.session.commit()
+            return jsonify({'ok': True})
+
         nova_data_str = data.get('data_meta')
 
         if not nova_data_str:
             return jsonify({'ok': False, 'erro': 'Data inválida'}), 400
 
         try:
-            tarefa.data_meta = parse_date(nova_data_str)
+            nova_data_meta = parse_date(nova_data_str)
         except ValueError:
             return jsonify({'ok': False, 'erro': 'Formato de data inválido'}), 400
+
+        if tarefa.data_inicio and nova_data_meta < tarefa.data_inicio:
+            return jsonify({
+                'ok': False,
+                'erro': 'A meta não pode ficar antes da data de início ({}).'.format(
+                    tarefa.data_inicio.strftime('%d/%m/%Y')),
+            }), 400
+
+        tarefa.data_meta = nova_data_meta
 
         db.session.commit()
         return jsonify({'ok': True})

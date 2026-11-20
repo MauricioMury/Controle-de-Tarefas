@@ -62,6 +62,9 @@
                 <h4 class="mb-0"><i class="bi bi-pencil"></i> Editar Tarefa</h4>
             </div>
             <div class="card-body">
+                <p class="text-muted small mb-3" id="tarefa-criada-em">
+                    <i class="bi bi-calendar-plus"></i> Criada em {{ tarefa.created_at|data_sp }}
+                </p>
                 <div class="edit-task-steps">
                     <div class="edit-task-steps-info">
                         <div class="edit-task-steps-title">
@@ -96,29 +99,44 @@
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
+                            <label for="data_inicio" class="form-label">Data de Início</label>
+                            <input type="date" class="form-control" id="data_inicio" name="data_inicio"
+                                value="{{ tarefa.data_inicio.strftime('%Y-%m-%d') if tarefa.data_inicio else '' }}">
+                            {% if not tarefa.data_inicio and tarefa.status != 'Concluída' %}
+                            <small class="form-text text-warning" id="aviso-sem-inicio"><i class="bi bi-exclamation-triangle"></i> Tarefa sem data de início</small>
+                            {% else %}
+                            <small class="form-text text-muted">Quando você começou ou vai começar. Opcional</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="hora_inicio" class="form-label">Hora Início</label>
+                            <input type="time" class="form-control" id="hora_inicio" name="hora_inicio"
+                                value="{{ tarefa.hora_inicio.strftime('%H:%M') if tarefa.hora_inicio else '' }}">
+                            <small class="form-text text-muted">Hora da data de início</small>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
                             <label for="data_meta" class="form-label">Data Meta *</label>
                             <input type="date" class="form-control" id="data_meta" name="data_meta"
                                 value="{{ tarefa.data_meta.strftime('%Y-%m-%d') }}" required>
+                            <small class="form-text text-muted">Quando você pretende terminar</small>
                         </div>
+                    </div>
+
+                    <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="data_realizado" class="form-label">Data Realizado</label>
                             <input type="date" class="form-control" id="data_realizado" name="data_realizado"
                                 value="{% if tarefa.data_realizado %}{{ tarefa.data_realizado.strftime('%Y-%m-%d') }}{% endif %}">
                             <small class="form-text text-muted">Preencha se já foi concluída</small>
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="hora_inicio" class="form-label">Hora Início *</label>
-                            <input type="time" class="form-control" id="hora_inicio" name="hora_inicio"
-                                value="{{ tarefa.hora_inicio.strftime('%H:%M') }}" required>
-                        </div>
                         <div class="col-md-6 mb-3">
                             <label for="hora_fim" class="form-label">Hora Fim</label>
                             <input type="time" class="form-control" id="hora_fim" name="hora_fim"
                                 value="{{ tarefa.hora_fim.strftime('%H:%M') if tarefa.hora_fim else '' }}">
-                            <small class="form-text text-muted">Opcional</small>
+                            <small class="form-text text-muted">Hora da data realizado</small>
                         </div>
                     </div>
 
